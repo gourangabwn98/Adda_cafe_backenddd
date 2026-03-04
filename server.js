@@ -12,8 +12,13 @@ import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 connectDB();
 
 const app = express();
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://adda-cafe-frontenddd.vercel.app",
+];
 
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
+app.use(cors({ origin: allowedOrigins, credentials: true }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
