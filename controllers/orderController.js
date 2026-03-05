@@ -53,6 +53,45 @@ export const getOrderById = async (req, res) => {
   res.json(order);
 };
 
+// Change order type
+export const changeOrderType = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { orderType } = req.body;
+
+    if (!["Dining", "Take Away"].includes(orderType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order type",
+      });
+    }
+
+    const order = await Order.findByIdAndUpdate(
+      orderId,
+      { orderType },
+      { new: true },
+    );
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Order type updated successfully",
+      data: order,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // PUT /api/orders/:id/cancel
 export const cancelOrder = async (req, res) => {
   const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
