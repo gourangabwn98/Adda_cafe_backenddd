@@ -22,6 +22,33 @@ export const getCategories = async (req, res) => {
   res.json(cats);
 };
 
+// GET /api/menu/categories-with-image
+export const getCategoriesWithImage = async (req, res) => {
+  try {
+    const categories = await MenuItem.aggregate([
+      { $match: { isAvailable: true } },
+      {
+        $group: {
+          _id: "$category",
+          categoryImage: { $first: "$categoryImage" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          category: "$_id",
+          categoryImage: 1,
+        },
+      },
+      { $sort: { category: 1 } },
+    ]);
+
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // POST /api/menu  [admin]
 export const createMenuItem = async (req, res) => {
   const item = await MenuItem.create(req.body);

@@ -13,6 +13,7 @@ const menuItemSchema = new mongoose.Schema(
       enum: ["Burger", "Biryani", "Pizza", "Wrap", "Rice", "Drinks"],
       required: true,
     },
+    categoryImage: { type: String, default: "🍔" },
     tag: { type: String, enum: ["Veg", "Non Veg"], required: true },
     image: { type: String, default: "🍔" },
     isAvailable: { type: Boolean, default: true },
