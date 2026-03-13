@@ -6,6 +6,7 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import menuRoutes from "./routes/menuRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
+import invoiceRoutes from "./routes/invoiceRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 
 // dotenv.config();
@@ -44,6 +45,7 @@ app.get("/api/health", (_, res) =>
 app.use("/api/auth", authRoutes);
 app.use("/api/menu", menuRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/invoices", invoiceRoutes);
 
 // Error handlers
 

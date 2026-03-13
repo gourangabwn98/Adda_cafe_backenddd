@@ -5,7 +5,10 @@ import { Order } from "../models/Order.js";
 
 // POST /api/orders
 export const placeOrder = async (req, res) => {
-  const { items, orderType } = req.body;
+  // const { items, orderType } = req.body;
+  const { items, orderType, orderId, isGuest } = req.body;
+  console.log(items, orderType);
+
   if (!items?.length)
     return res.status(400).json({ message: "No items in order" });
 
@@ -25,7 +28,9 @@ export const placeOrder = async (req, res) => {
   const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000); // 3 min
 
   const order = await Order.create({
-    user: req.user._id,
+    orderId: orderId || undefined,
+    user: req.user ? req.user._id : null,
+    isGuest: isGuest || false,
     items: dbItems,
     subtotal,
     tax,
@@ -34,7 +39,6 @@ export const placeOrder = async (req, res) => {
     orderType: orderType || "Dining",
     cancelDeadline,
   });
-
   res.status(201).json(order);
 };
 
@@ -50,6 +54,14 @@ export const getMyOrders = async (req, res) => {
 export const getOrderById = async (req, res) => {
   const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
   if (!order) return res.status(404).json({ message: "Order not found" });
+  res.json(order);
+};
+
+export const getOrderByOrderId = async (req, res) => {
+  const order = await Order.findOne({ orderId: req.params.orderId });
+
+  if (!order) return res.status(404).json({ message: "Order not found" });
+
   res.json(order);
 };
 

@@ -30,6 +30,26 @@ export const protect = async (req, res, next) => {
   }
 };
 
+export const optionalProtect = async (req, res, next) => {
+  const auth = req.headers.authorization;
+
+  if (!auth || !auth.startsWith("Bearer ")) {
+    req.user = null; // guest user
+    return next();
+  }
+
+  try {
+    const token = auth.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    req.user = await User.findById(decoded.id).select("-otp -otpExpiry");
+  } catch (error) {
+    req.user = null;
+  }
+
+  next();
+};
+
 // ─── middleware/errorMiddleware.js ───────────────────────────────────────────
 export const notFound = (req, res, next) => {
   next(new Error(`Not Found — ${req.originalUrl}`));

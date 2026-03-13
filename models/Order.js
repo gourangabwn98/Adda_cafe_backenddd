@@ -14,7 +14,16 @@ const orderItemSchema = new mongoose.Schema({
 const orderSchema = new mongoose.Schema(
   {
     orderId: { type: String, unique: true },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
+
+    isGuest: {
+      type: Boolean,
+      default: false,
+    },
     items: [orderItemSchema],
     subtotal: { type: Number, required: true },
     tax: { type: Number, required: true },
@@ -27,7 +36,14 @@ const orderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Placed", "Preparing", "Ready", "Completed", "Cancelled"],
+      enum: [
+        "Placed",
+        "Preparing",
+        "Ready",
+        "delivered",
+        "Completed",
+        "Cancelled",
+      ],
       default: "Placed",
     },
     paymentStatus: {
