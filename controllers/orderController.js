@@ -4,10 +4,45 @@ import { Order } from "../models/Order.js";
 // ─── ORDER CONTROLLER ────────────────────────────────────────────────────────
 
 // POST /api/orders
+// export const placeOrder = async (req, res) => {
+//   // const { items, orderType } = req.body;
+//   const { items, orderType, orderId, isGuest } = req.body;
+//   console.log(items, orderType);
+
+//   if (!items?.length)
+//     return res.status(400).json({ message: "No items in order" });
+
+//   // Verify prices from DB
+//   const dbItems = await Promise.all(
+//     items.map(async (i) => {
+//       const m = await MenuItem.findById(i.menuItemId);
+//       if (!m || !m.isAvailable) throw new Error(`${i.name} is not available`);
+//       return { menuItem: m._id, name: m.name, price: m.price, qty: i.qty };
+//     }),
+//   );
+
+//   const subtotal = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
+//   const tax = Math.round(subtotal * 0.18);
+//   const discount = subtotal > 400 ? 10 : 0;
+//   const total = subtotal + tax - discount;
+//   const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000); // 3 min
+
+//   const order = await Order.create({
+//     orderId: orderId || undefined,
+//     user: req.user ? req.user._id : null,
+//     isGuest: isGuest || false,
+//     items: dbItems,
+//     subtotal,
+//     tax,
+//     discount,
+//     total,
+//     orderType: orderType || "Dining",
+//     cancelDeadline,
+//   });
+//   res.status(201).json(order);
+// };
 export const placeOrder = async (req, res) => {
-  // const { items, orderType } = req.body;
   const { items, orderType, orderId, isGuest } = req.body;
-  console.log(items, orderType);
 
   if (!items?.length)
     return res.status(400).json({ message: "No items in order" });
@@ -17,7 +52,13 @@ export const placeOrder = async (req, res) => {
     items.map(async (i) => {
       const m = await MenuItem.findById(i.menuItemId);
       if (!m || !m.isAvailable) throw new Error(`${i.name} is not available`);
-      return { menuItem: m._id, name: m.name, price: m.price, qty: i.qty };
+
+      return {
+        menuItem: m._id,
+        name: m.name,
+        price: m.price,
+        qty: i.qty,
+      };
     }),
   );
 
@@ -25,6 +66,7 @@ export const placeOrder = async (req, res) => {
   const tax = Math.round(subtotal * 0.18);
   const discount = subtotal > 400 ? 10 : 0;
   const total = subtotal + tax - discount;
+
   const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000); // 3 min
 
   const order = await Order.create({
@@ -37,8 +79,31 @@ export const placeOrder = async (req, res) => {
     discount,
     total,
     orderType: orderType || "Dining",
+    status: "Placed", // ⭐ IMPORTANT
     cancelDeadline,
   });
+
+  // 🔥 AUTO CHANGE STATUS AFTER 3 MINUTES
+  setTimeout(
+    async () => {
+      try {
+        const current = await Order.findById(order._id);
+
+        // Only update if still Placed (not cancelled)
+        if (current && current.status === "Placed") {
+          await Order.findByIdAndUpdate(order._id, {
+            status: "Preparing",
+          });
+
+          console.log(`Order ${order._id} → Preparing`);
+        }
+      } catch (err) {
+        console.error("Auto status update failed:", err);
+      }
+    },
+    3 * 60 * 1000,
+  ); // 3 minutes
+
   res.status(201).json(order);
 };
 
