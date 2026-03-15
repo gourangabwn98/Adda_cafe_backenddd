@@ -83,3 +83,31 @@ export const getProfile = async (req, res) => {
   if (!user) return res.status(404).json({ message: "User not found" });
   res.json(user);
 };
+//change veg mode
+export const updateVegMode = async (req, res) => {
+  try {
+    const { vegMode } = req.body;
+
+    if (typeof vegMode !== "boolean") {
+      return res.status(400).json({
+        message: "vegMode must be true or false",
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id, // from auth middleware
+      { vegMode },
+      { new: true },
+    );
+
+    res.json({
+      message: "Veg mode updated successfully",
+      vegMode: user.vegMode,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
