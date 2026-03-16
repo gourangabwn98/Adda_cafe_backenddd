@@ -42,7 +42,7 @@ import { Order } from "../models/Order.js";
 //   res.status(201).json(order);
 // };
 export const placeOrder = async (req, res) => {
-  const { items, orderType, orderId, isGuest } = req.body;
+  const { items, orderType, tableNo, orderId, isGuest } = req.body;
 
   if (!items?.length)
     return res.status(400).json({ message: "No items in order" });
@@ -79,6 +79,7 @@ export const placeOrder = async (req, res) => {
     discount,
     total,
     orderType: orderType || "Dining",
+    tableNo,
     status: "Placed", // ⭐ IMPORTANT
     cancelDeadline,
   });

@@ -34,6 +34,7 @@ const orderSchema = new mongoose.Schema(
       enum: ["Dining", "Take Away"],
       default: "Dining",
     },
+    tableNo: { type: Number, default: null },
     status: {
       type: String,
       enum: [
