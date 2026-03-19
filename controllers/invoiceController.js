@@ -32,7 +32,8 @@ import { Order } from "../models/Order.js";
 // };
 export const generateInvoice = async (req, res) => {
   try {
-    const { orders, items, userId, isGuest } = req.body;
+    const { orders, items, userId, isGuest, tableNo } = req.body;
+    console.log("tableNo", tableNo);
 
     const safeItems = items || [];
 
@@ -56,6 +57,7 @@ export const generateInvoice = async (req, res) => {
       subtotal,
       tax,
       total,
+      tableNo: tableNo || null,
     });
 
     res.status(201).json(invoice);
@@ -99,5 +101,129 @@ export const getInvoiceById = async (req, res) => {
     res.json(invoice);
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch invoice" });
+  }
+};
+export const getAllInvoices = async (req, res) => {
+  try {
+    const {
+      status,
+      userId,
+      isGuest,
+      startDate,
+      endDate,
+      limit = 50,
+      page = 1,
+    } = req.query;
+
+    const query = {};
+
+    // Optional filters
+    if (status) query.status = status;
+    if (userId) query.user = userId;
+    if (isGuest !== undefined) query.isGuest = isGuest === "true";
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const invoices = await Invoice.find(query)
+      .populate("user", "name phone email") // optional: populate user info
+      .populate("orders", "orderId tableNo status total") // optional: populate orders
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Invoice.countDocuments(query);
+
+    res.json({
+      success: true,
+      count: invoices.length,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+      data: invoices,
+    });
+  } catch (err) {
+    console.error("getAllInvoices error:", err);
+    res.status(500).json({ message: "Failed to fetch all invoices" });
+  }
+};
+
+// ────────────────────────────────────────────────
+// 2. Update Invoice Status (Admin only)
+// ────────────────────────────────────────────────
+export const updateInvoiceStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, paymentStatus, notes } = req.body;
+
+    // Allowed statuses (you can adjust this list)
+    const allowedStatuses = [
+      "pending",
+      "completed",
+      "paid",
+      "cancelled",
+      "refunded",
+    ];
+
+    if (!status || !allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        message: `Invalid status. Allowed: ${allowedStatuses.join(", ")}`,
+      });
+    }
+
+    const invoice = await Invoice.findById(id);
+
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
+    // Optional: prevent changing already completed invoices
+    if (invoice.status === "completed" && status !== "refunded") {
+      return res
+        .status(403)
+        .json({ message: "Cannot modify completed invoice" });
+    }
+
+    invoice.status = status;
+
+    if (paymentStatus) {
+      invoice.paymentStatus = paymentStatus;
+    }
+
+    if (notes) {
+      invoice.notes =
+        (invoice.notes || "") + `\n${new Date().toISOString()} - ${notes}`;
+    }
+
+    // If completing / paid → also complete related orders
+    if (["completed", "paid"].includes(status)) {
+      await Order.updateMany(
+        { _id: { $in: invoice.orders } },
+        { $set: { status: "Completed", paymentStatus: "Paid" } },
+      );
+    }
+
+    // If cancelled / refunded → revert orders if needed
+    if (["cancelled", "refunded"].includes(status)) {
+      await Order.updateMany(
+        { _id: { $in: invoice.orders } },
+        { $set: { status: "Cancelled" } },
+      );
+    }
+
+    const updatedInvoice = await invoice.save();
+
+    res.json({
+      success: true,
+      message: `Invoice status updated to ${status}`,
+      data: updatedInvoice,
+    });
+  } catch (err) {
+    console.error("updateInvoiceStatus error:", err);
+    res.status(500).json({ message: "Failed to update invoice status" });
   }
 };

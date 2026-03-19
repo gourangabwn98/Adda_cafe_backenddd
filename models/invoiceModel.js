@@ -53,7 +53,7 @@ const invoiceSchema = new mongoose.Schema(
         qty: Number,
       },
     ],
-
+    tableNo: { type: Number, default: null },
     status: {
       type: String,
       enum: ["pending", "complete", "paid", "cancelled"],
