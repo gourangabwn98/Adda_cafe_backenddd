@@ -7,6 +7,8 @@ import {
   updateOrderStatus,
   getAllUsers,
   deleteUser,
+  getAllInvoices,
+  updateInvoiceStatus,
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -16,8 +18,11 @@ router.use(protect);
 
 router.get("/dashboard", getDashboardStats);
 router.get("/orders", getAllOrders);
-router.put("/orders/:id/status", updateOrderStatus);
+router.get("/invoices/all", getAllInvoices);
 router.get("/users", getAllUsers);
+router.patch("/invoices/:id/status", updateInvoiceStatus);
+router.put("/orders/:id/status", updateOrderStatus);
+
 router.delete("/users/:id", deleteUser);
 
 export default router;

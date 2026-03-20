@@ -210,3 +210,228 @@ export const deleteUser = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+export const getAllInvoices = async (req, res) => {
+  try {
+    // Optional: log who is calling (useful for debugging)
+    console.log(
+      "[getAllInvoices] Called by:",
+      req.user?._id || "unauthenticated",
+    );
+
+    const invoices = await Invoice.find()
+      .sort({ createdAt: -1 }) // newest first
+      .populate("user", "name phone email") // populate user fields (add more if needed)
+      .lean(); // faster response (optional but good)
+
+    // Optional debug log
+    console.log(`Found ${invoices.length} invoices`);
+
+    // Send proper successful response
+    return res.status(200).json({
+      success: true,
+      count: invoices.length,
+      invoices,
+    });
+  } catch (err) {
+    // Detailed error logging (very helpful)
+    console.error("getAllInvoices error:", {
+      message: err.message,
+      stack: err.stack,
+      name: err.name,
+    });
+
+    // Send proper error response to client
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch all invoices",
+      // Only show detailed error in development
+      ...(process.env.NODE_ENV === "development" && { error: err.message }),
+    });
+  }
+};
+
+// ────────────────────────────────────────────────
+// 2. Update Invoice Status (Admin only)
+// ────────────────────────────────────────────────
+// export const updateInvoiceStatus = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { status, paymentStatus, notes } = req.body;
+
+//     // Allowed statuses (you can adjust this list)
+//     const allowedStatuses = [
+//       "pending",
+//       "completed",
+//       "paid",
+//       "cancelled",
+//       "refunded",
+//     ];
+
+//     if (!status || !allowedStatuses.includes(status)) {
+//       return res.status(400).json({
+//         message: `Invalid status. Allowed: ${allowedStatuses.join(", ")}`,
+//       });
+//     }
+
+//     const invoice = await Invoice.findById(id);
+
+//     if (!invoice) {
+//       return res.status(404).json({ message: "Invoice not found" });
+//     }
+
+//     // Optional: prevent changing already completed invoices
+//     if (invoice.status === "completed" && status !== "refunded") {
+//       return res
+//         .status(403)
+//         .json({ message: "Cannot modify completed invoice" });
+//     }
+
+//     invoice.status = status;
+
+//     if (paymentStatus) {
+//       invoice.paymentStatus = paymentStatus;
+//     }
+
+//     if (notes) {
+//       invoice.notes =
+//         (invoice.notes || "") + `\n${new Date().toISOString()} - ${notes}`;
+//     }
+
+//     // If completing / paid → also complete related orders
+//     if (["completed", "paid"].includes(status)) {
+//       await Order.updateMany(
+//         { _id: { $in: invoice.orders } },
+//         { $set: { status: "Completed", paymentStatus: "Paid" } },
+//       );
+//     }
+
+//     // If cancelled / refunded → revert orders if needed
+//     if (["cancelled", "refunded"].includes(status)) {
+//       await Order.updateMany(
+//         { _id: { $in: invoice.orders } },
+//         { $set: { status: "Cancelled" } },
+//       );
+//     }
+
+//     const updatedInvoice = await invoice.save();
+
+//     res.json({
+//       success: true,
+//       message: `Invoice status updated to ${status}`,
+//       data: updatedInvoice,
+//     });
+//   } catch (err) {
+//     console.error("updateInvoiceStatus error:", err);
+//     res.status(500).json({ message: "Failed to update invoice status" });
+//   }
+// };
+export const updateInvoiceStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, paymentStatus, notes } = req.body;
+
+    // Allowed invoice statuses
+    const allowedStatuses = [
+      "pending",
+      "completed",
+      "paid",
+      "cancelled",
+      "refunded",
+    ];
+
+    if (!status || !allowedStatuses.includes(status.toLowerCase())) {
+      return res.status(400).json({
+        message: `Invalid status. Allowed: ${allowedStatuses.join(", ")}`,
+      });
+    }
+
+    // Find the invoice
+    const invoice = await Invoice.findById(id);
+
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
+    // Optional: prevent changing already completed invoices (except refund)
+    if (invoice.status === "completed" && status.toLowerCase() !== "refunded") {
+      return res
+        .status(403)
+        .json({ message: "Cannot modify completed invoice (except refund)" });
+    }
+
+    // Update invoice status
+    invoice.status = status.toLowerCase();
+
+    // Optional: update payment status if provided
+    if (paymentStatus) {
+      invoice.paymentStatus = paymentStatus;
+    }
+
+    // Append notes with timestamp
+    if (notes) {
+      invoice.notes =
+        (invoice.notes || "") + `\n${new Date().toISOString()} - ${notes}`;
+    }
+
+    // Special logic: When invoice is "completed" or "paid" → complete all related orders
+    if (["completed", "paid"].includes(status.toLowerCase())) {
+      if (invoice.orders && invoice.orders.length > 0) {
+        await Order.updateMany(
+          { _id: { $in: invoice.orders } },
+          {
+            $set: {
+              status: "Completed",
+              paymentStatus: "Paid",
+              updatedAt: new Date(),
+            },
+          },
+        );
+
+        console.log(
+          `Completed ${invoice.orders.length} orders for invoice ${id}`,
+        );
+      }
+    }
+
+    // Optional: Handle cancellation/refund (revert orders if needed)
+    if (["cancelled", "refunded"].includes(status.toLowerCase())) {
+      if (invoice.orders && invoice.orders.length > 0) {
+        await Order.updateMany(
+          { _id: { $in: invoice.orders } },
+          {
+            $set: {
+              status: "Cancelled",
+              updatedAt: new Date(),
+            },
+          },
+        );
+
+        console.log(
+          `Cancelled ${invoice.orders.length} orders for invoice ${id}`,
+        );
+      }
+    }
+
+    // Save updated invoice
+    const updatedInvoice = await invoice.save();
+
+    // Return success response
+    res.status(200).json({
+      success: true,
+      message: `Invoice status updated to ${status}`,
+      data: updatedInvoice,
+    });
+  } catch (err) {
+    console.error("updateInvoiceStatus error:", {
+      message: err.message,
+      stack: err.stack,
+    });
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to update invoice status",
+      error: process.env.NODE_ENV === "development" ? err.message : undefined,
+    });
+  }
+};
