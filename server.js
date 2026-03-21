@@ -19,8 +19,9 @@ const app = express();
 
 // app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 const allowedOrigins = [
-  "http://localhost:5173",
-  "https://adda-cafe-frontenddd.vercel.app",
+  "http://localhost:5173", //user
+  "http://localhost:5174", //admin
+  "https://adda-cafe-frontenddd.vercel.app", //user production
 ];
 
 app.use(
