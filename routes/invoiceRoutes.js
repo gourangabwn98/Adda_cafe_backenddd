@@ -10,6 +10,6 @@ const router = express.Router();
 
 router.post("/generate", generateInvoice);
 router.get("/my", protect, getMyInvoices);
-router.get("/:id", protect, getInvoiceById);
+router.get("/:id", getInvoiceById);
 
 export default router;
