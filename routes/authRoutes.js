@@ -6,6 +6,7 @@ import {
   getProfile,
   updateProfile,
   updateVegMode,
+  updateLanguage,
 } from "../controllers/authController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
@@ -15,5 +16,6 @@ router.post("/verify-otp", verifyOTP);
 router.get("/profile", protect, getProfile);
 router.put("/profile", protect, updateProfile);
 router.patch("/veg-mode", protect, updateVegMode);
+router.patch("/language", protect, updateLanguage);
 
 export default router;

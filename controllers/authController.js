@@ -111,3 +111,45 @@ export const updateVegMode = async (req, res) => {
     });
   }
 };
+
+// controllers/userController.js (or wherever it is)
+export const updateLanguage = async (req, res) => {
+  try {
+    const { language } = req.body;
+
+    // Better validation
+    if (!language || !["en", "bn"].includes(language)) {
+      return res.status(400).json({
+        message: "Valid language is required (en or bn)",
+      });
+    }
+
+    // Check if user exists in req
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({
+        message: "Unauthorized: Please login first",
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { language }, // simple update
+      { new: true, runValidators: true }, // important options
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      message: "Language updated successfully",
+      language: user.language,
+    });
+  } catch (err) {
+    console.error("Update Language Error:", err); // ← This will show real error
+    res.status(500).json({
+      message: "Server error",
+      error: process.env.NODE_ENV === "development" ? err.message : undefined,
+    });
+  }
+};
