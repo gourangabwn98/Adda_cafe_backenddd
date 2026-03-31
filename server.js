@@ -22,6 +22,7 @@ const allowedOrigins = [
   "http://localhost:5173", //user
   "http://localhost:5174", //admin
   "https://adda-cafe-frontenddd.vercel.app", //user production
+  "https://adda-kitchen.vercel.app", //chef kitchen production
 ];
 
 app.use(
