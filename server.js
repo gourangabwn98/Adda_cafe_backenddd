@@ -21,8 +21,9 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:5173", //user
   "http://localhost:5174", //admin
-  "https://adda-cafe-frontenddd.vercel.app", //user production
-  "https://adda-kitchen.vercel.app", //chef kitchen production
+  "https://adda-cafe-frontenddd.vercel.app", //user
+  "https://adda-kitchen.vercel.app", //chef kitchen
+  "https://www.addacafes.com", //user production with custom domain
 ];
 
 app.use(
