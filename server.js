@@ -11,6 +11,9 @@ import orderRoutes from "./routes/orderRoutes.js";
 import invoiceRoutes from "./routes/invoiceRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import tableRoutes from "./routes/tableRoutes.js";
+import chefRoutes from "./routes/chefRoutes.js";
+import profileRoutes from "./routes/profileRoutes.js";
 
 // dotenv.config();
 connectDB();
@@ -55,6 +58,10 @@ app.use("/api/menu", menuRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/admin/tables", tableRoutes);
+app.use("/api/admin/chefs", chefRoutes);
+app.use("/api/admin/restaurant", profileRoutes);
+// app.use("/api/chefs", require("./routes/chefRoutes.js"));
 
 // Error handlers
 
