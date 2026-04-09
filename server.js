@@ -14,6 +14,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import tableRoutes from "./routes/tableRoutes.js";
 import chefRoutes from "./routes/chefRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
+import catagoryRoutes from "./routes/catagoryRoutes.js";
 
 // dotenv.config();
 connectDB();
@@ -61,6 +62,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/admin/tables", tableRoutes);
 app.use("/api/admin/chefs", chefRoutes);
 app.use("/api/admin/restaurant", profileRoutes);
+app.use("/api/categories", catagoryRoutes);
 // app.use("/api/chefs", require("./routes/chefRoutes.js"));
 
 // Error handlers
