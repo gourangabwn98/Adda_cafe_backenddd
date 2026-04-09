@@ -1,17 +1,21 @@
 import express from "express";
 import {
+  getTables,
+  getTableByNo,
   createTable,
-  deleteTable,
-  getAllTables,
   updateTable,
+  deleteTable,
+  regenerateQR,
 } from "../controllers/tableController.js";
-const router = express.Router();
-// const router = express.Router();
+import { protect } from "../middleware/authMiddleware.js";
 
-// Protect these routes with admin middleware if you have one
-router.get("/", getAllTables);
-router.post("/", createTable);
-router.put("/:tableNo", updateTable);
-router.delete("/:tableNo", deleteTable);
+const router = express.Router();
+
+router.get("/", getTables);
+router.get("/:tableNo", getTableByNo);
+router.post("/", protect, createTable);
+router.put("/:tableNo", protect, updateTable);
+router.delete("/:tableNo", protect, deleteTable);
+router.post("/:tableNo/regenerate-qr", protect, regenerateQR);
 
 export default router;

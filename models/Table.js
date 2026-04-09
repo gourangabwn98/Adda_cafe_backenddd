@@ -1,36 +1,22 @@
-// const mongoose = require("mongoose");
 import mongoose from "mongoose";
 
 const tableSchema = new mongoose.Schema(
   {
-    tableNo: {
-      type: Number,
-      required: true,
-      unique: true,
-      min: 1,
-      max: 50, // you can increase later
-    },
-    seats: {
-      type: Number,
-      required: true,
-      min: 1,
-      max: 12,
-    },
-    status: {
-      type: String,
-      enum: ["Active", "Inactive", "Maintenance"],
-      default: "Active",
-    },
-    notes: {
-      type: String,
-      maxlength: 200,
-    },
+    tableNo: { type: Number, required: true, unique: true },
+    seats: { type: Number, required: true, default: 4 },
+    status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
+    label: { type: String },
+    notes: { type: String },
+    qrUrl: { type: String },
+    qrCode: { type: String },
   },
   { timestamps: true },
 );
 
-// Optional: Index for faster lookup
-// tableSchema.index({ tableNo: 1 });
+// ✅ FIX: pass `next` as parameter and call it
+// tableSchema.pre("save", function (next) {
+//   if (!this.label) this.label = `Table ${this.tableNo}`;
+//   next(); // ← this was missing or not called
+// });
 
-// module.exports = mongoose.model("Table", tableSchema);
 export const Table = mongoose.model("Table", tableSchema);

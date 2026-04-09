@@ -1,73 +1,112 @@
-// import { Table } from "../models/Table.js";
-
+// ─── controllers/tableController.js — generate QR on create ──────────────────
+// import QRCode from "qrcode";
+import * as QRCode from "qrcode";
 import { Table } from "../models/Table.js";
 
-// Get all tables
-export const getAllTables = async (req, res) => {
+// ── helper: generate QR PNG as base64 data-URI ────────────────────────────────
+const generateQR = async (tableNo) => {
+  // The URL the customer sees when they scan the QR
+  const url = `${process.env.CLIENT_URL}/?table=${tableNo}`;
+
+  const dataUri = await QRCode.toDataURL(url, {
+    width: 300,
+    margin: 2,
+    color: { dark: "#1a1a2e", light: "#ffffff" },
+    errorCorrectionLevel: "H",
+  });
+
+  return { url, dataUri };
+};
+
+// GET /api/tables
+export const getTables = async (req, res) => {
   try {
     const tables = await Table.find().sort({ tableNo: 1 });
-    res.json({ success: true, tables });
+    res.json({ tables });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// Create new table
+// GET /api/tables/:tableNo
+export const getTableByNo = async (req, res) => {
+  try {
+    const table = await Table.findOne({ tableNo: req.params.tableNo });
+    if (!table) return res.status(404).json({ message: "Table not found" });
+    res.json(table);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/tables
 export const createTable = async (req, res) => {
   try {
-    const { tableNo, seats, notes } = req.body;
+    const { tableNo, seats, label, notes } = req.body;
+    if (!tableNo) return res.status(400).json({ message: "tableNo required" });
 
-    // Check if table number already exists
-    const existing = await Table.findOne({ tableNo });
-    if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: `Table ${tableNo} already exists`,
-      });
-    }
+    const exists = await Table.findOne({ tableNo });
+    if (exists)
+      return res
+        .status(400)
+        .json({ message: `Table ${tableNo} already exists` });
 
-    const table = await Table.create({ tableNo, seats, notes });
-    res.status(201).json({ success: true, table });
+    // Generate QR
+    const { url, dataUri } = await generateQR(tableNo);
+
+    const table = await Table.create({
+      tableNo,
+      seats: seats || 4,
+      label: label || `Table ${tableNo}`,
+      notes,
+      qrUrl: url,
+      qrCode: dataUri,
+    });
+
+    res.status(201).json(table);
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(400).json({ message: err.message });
   }
 };
 
-// Update table (seats, status, notes)
+// PUT /api/tables/:tableNo
 export const updateTable = async (req, res) => {
   try {
-    const { seats, status, notes } = req.body;
     const table = await Table.findOneAndUpdate(
       { tableNo: req.params.tableNo },
-      { seats, status, notes },
+      req.body,
       { new: true, runValidators: true },
     );
-
-    if (!table) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Table not found" });
-    }
-
-    res.json({ success: true, table });
+    if (!table) return res.status(404).json({ message: "Table not found" });
+    res.json(table);
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(400).json({ message: err.message });
   }
 };
 
-// Delete table
+// DELETE /api/tables/:tableNo
 export const deleteTable = async (req, res) => {
   try {
     const table = await Table.findOneAndDelete({ tableNo: req.params.tableNo });
-
-    if (!table) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Table not found" });
-    }
-
-    res.json({ success: true, message: `Table ${table.tableNo} deleted` });
+    if (!table) return res.status(404).json({ message: "Table not found" });
+    res.json({ message: `Table ${table.tableNo} deleted` });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/tables/:tableNo/regenerate-qr  — admin can regenerate QR anytime
+export const regenerateQR = async (req, res) => {
+  try {
+    const { url, dataUri } = await generateQR(req.params.tableNo);
+    const table = await Table.findOneAndUpdate(
+      { tableNo: req.params.tableNo },
+      { qrUrl: url, qrCode: dataUri },
+      { new: true },
+    );
+    if (!table) return res.status(404).json({ message: "Table not found" });
+    res.json({ message: "QR regenerated", qrCode: dataUri, qrUrl: url });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
