@@ -1,4 +1,6 @@
 import dns from "node:dns";
+import http from "http";
+import { Server } from "socket.io";
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
 import express from "express";
 import "./config/env.js";
@@ -20,12 +22,21 @@ import catagoryRoutes from "./routes/catagoryRoutes.js";
 connectDB();
 
 const app = express();
+const server = http.createServer(app);
+
+export const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
 
 // app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 const allowedOrigins = [
   "http://localhost:5173", //user
   "http://localhost:5174", //admin
   "http://localhost:5177", //waiter
+  "http://localhost:5176",
   "https://adda-cafe-frontenddd.vercel.app", //user
   "https://adda-kitchen.vercel.app", //chef kitchen
   "https://adda-waiter.vercel.app", //waiter
@@ -34,19 +45,23 @@ const allowedOrigins = [
   "https://chef.addacafes.com", //chef production with custom domain
 ];
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-  }),
-);
-
+// app.use(
+//   cors({
+//     origin: function (origin, callback) {
+//       if (!origin || allowedOrigins.includes(origin)) {
+//         callback(null, true);
+//       } else {
+//         callback(new Error("Not allowed by CORS"));
+//       }
+//     },
+//     credentials: true,
+//   }),
+// );
+app.use(cors({
+  origin: "*", // TEMPORARY TEST
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -73,5 +88,5 @@ app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 console.log("JWT_SECRET server:", process.env.JWT_SECRET);

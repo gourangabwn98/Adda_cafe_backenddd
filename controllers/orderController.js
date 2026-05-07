@@ -1,5 +1,6 @@
 import { MenuItem } from "../models/MenuItem.js";
 import { Order } from "../models/Order.js";
+import { io } from "../server.js";
 
 // ─── ORDER CONTROLLER ────────────────────────────────────────────────────────
 
@@ -43,6 +44,8 @@ import { Order } from "../models/Order.js";
 // };
 export const placeOrder = async (req, res) => {
   const { items, orderType, tableNo, orderId, isGuest } = req.body;
+  console.log("dd",items, orderType, tableNo, orderId, isGuest);
+  
 
   if (!items?.length)
     return res.status(400).json({ message: "No items in order" });
@@ -104,6 +107,8 @@ export const placeOrder = async (req, res) => {
     },
     3 * 60 * 1000,
   ); // 3 minutes
+
+  io.emit("new-order", order);
 
   res.status(201).json(order);
 };
