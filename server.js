@@ -31,6 +31,10 @@ export const io = new Server(server, {
   },
 });
 
+
+io.on("connection", (socket) => {
+  console.log("Socket connected:", socket.id);
+});
 // app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 const allowedOrigins = [
   "http://localhost:5173", //user
