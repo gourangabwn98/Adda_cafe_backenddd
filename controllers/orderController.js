@@ -108,7 +108,11 @@ export const placeOrder = async (req, res) => {
     3 * 60 * 1000,
   ); // 3 minutes
 
-  io.emit("new-order", order);
+
+
+ console.log("EMITTING ORDER");
+
+io.emit("new-order", order);
 
   res.status(201).json(order);
 };
