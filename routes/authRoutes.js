@@ -1,8 +1,6 @@
-// ─── routes/authRoutes.js ────────────────────────────────────────────────────
 import express from "express";
 import {
-  sendOTP,
-  verifyOTP,
+  firebaseVerify,
   getProfile,
   updateProfile,
   updateVegMode,
@@ -11,11 +9,32 @@ import {
 import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
-router.post("/send-otp", sendOTP);
-router.post("/verify-otp", verifyOTP);
+
+// Public
+router.post("/firebase-verify", firebaseVerify);
+
+// Protected
 router.get("/profile", protect, getProfile);
 router.put("/profile", protect, updateProfile);
 router.patch("/veg-mode", protect, updateVegMode);
 router.patch("/language", protect, updateLanguage);
 
 export default router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
