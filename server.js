@@ -27,7 +27,7 @@ const server = http.createServer(app);
 export const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST","PATCH" ],
+    methods: ["GET", "POST"],
   },
 });
 
@@ -63,7 +63,7 @@ const allowedOrigins = [
 // );
 app.use(cors({
   origin: "*", // TEMPORARY TEST
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS","PATCH" ],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 app.use(express.json());
