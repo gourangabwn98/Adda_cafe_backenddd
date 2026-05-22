@@ -31,6 +31,44 @@ const restaurantProfileSchema = new mongoose.Schema(
       default: "",
     },
 
+    // ── Banners (New) ─────────────────────────────────────────────────────
+    banners: [
+      {
+        imageUrl: {
+          type: String,
+          default: "",
+        },
+        link: {
+          type: String,
+          default: "",
+        },
+        active: {
+          type: Boolean,
+          default: true,
+        },
+      },
+    ],
+
+    // ── Printer IPs (New) ─────────────────────────────────────────────────
+    printerIps: [
+      {
+        ip: {
+          type: String,
+          trim: true,
+          default: "",
+        },
+        name: {
+          type: String,
+          trim: true,
+          default: "Printer 1", // e.g., "Kitchen", "Billing", "Bar"
+        },
+        active: {
+          type: Boolean,
+          default: true,
+        },
+      },
+    ],
+
     // ── Address & Location ─────────────────────────────────────────────────
     address: {
       type: String,
