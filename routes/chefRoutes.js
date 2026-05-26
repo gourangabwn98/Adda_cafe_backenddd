@@ -8,7 +8,7 @@ import {
 import { protect } from "../middleware/authMiddleware.js";
 // import { protect } from "../middleware/authMiddleware.js";
 const router = express.Router();
-router.use(protect);
+// router.use(protect);
 // const {
 //   getAllChefs,
 //   createChef,
@@ -22,8 +22,8 @@ router.use(protect);
 // router.use(protect, adminOnly);
 
 router.get("/", getAllChefs);
-router.post("/", createChef);
-router.patch("/:id/status", updateChefStatus);
-router.delete("/:id", deleteChef);
+router.post("/",protect, createChef);
+router.patch("/:id/status",protect, updateChefStatus);
+router.delete("/:id",protect, deleteChef);
 
 export default router;
