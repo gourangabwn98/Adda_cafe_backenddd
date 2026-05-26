@@ -117,47 +117,47 @@ export const uploadBanner = async (req, res) => {
   }
 };
 
-export const updateBanner = async (req, res) => {
-  try {
-    const { bannerId } = req.params;
-    const { link, active } = req.body;
+// export const updateBanner = async (req, res) => {
+//   try {
+//     const { bannerId } = req.params;
+//     const { link, active } = req.body;
 
-    const update = {};
-    if (link   !== undefined) update["banners.$.link"]   = link;
-    if (active !== undefined) update["banners.$.active"] = active !== "false" && active !== false;
+//     const update = {};
+//     if (link   !== undefined) update["banners.$.link"]   = link;
+//     if (active !== undefined) update["banners.$.active"] = active !== "false" && active !== false;
 
-    const profile = await RestaurantProfile.findOneAndUpdate(
-      { "banners._id": bannerId },
-      { $set: update },
-      { new: true },
-    );
-    if (!profile)
-      return res.status(404).json({ success: false, message: "Banner not found" });
+//     const profile = await RestaurantProfile.findOneAndUpdate(
+//       { "banners._id": bannerId },
+//       { $set: update },
+//       { new: true },
+//     );
+//     if (!profile)
+//       return res.status(404).json({ success: false, message: "Banner not found" });
 
-    res.status(200).json({ success: true, banner: profile.banners.id(bannerId), data: profile });
-  } catch (err) {
-    console.error("[updateBanner]", err);
-    res.status(500).json({ success: false, message: "Failed to update banner" });
-  }
-};
+//     res.status(200).json({ success: true, banner: profile.banners.id(bannerId), data: profile });
+//   } catch (err) {
+//     console.error("[updateBanner]", err);
+//     res.status(500).json({ success: false, message: "Failed to update banner" });
+//   }
+// };
 
-export const deleteBanner = async (req, res) => {
-  try {
-    const { bannerId } = req.params;
-    const profile = await RestaurantProfile.findOneAndUpdate(
-      {},
-      { $pull: { banners: { _id: bannerId } } },
-      { new: true },
-    );
-    if (!profile)
-      return res.status(404).json({ success: false, message: "Profile not found" });
+// export const deleteBanner = async (req, res) => {
+//   try {
+//     const { bannerId } = req.params;
+//     const profile = await RestaurantProfile.findOneAndUpdate(
+//       {},
+//       { $pull: { banners: { _id: bannerId } } },
+//       { new: true },
+//     );
+//     if (!profile)
+//       return res.status(404).json({ success: false, message: "Profile not found" });
 
-    res.status(200).json({ success: true, data: profile, message: "Banner deleted" });
-  } catch (err) {
-    console.error("[deleteBanner]", err);
-    res.status(500).json({ success: false, message: "Failed to delete banner" });
-  }
-};
+//     res.status(200).json({ success: true, data: profile, message: "Banner deleted" });
+//   } catch (err) {
+//     console.error("[deleteBanner]", err);
+//     res.status(500).json({ success: false, message: "Failed to delete banner" });
+//   }
+// };
 
 // ── Printer IPs ────────────────────────────────────────────────────────────────
 export const addPrinter = async (req, res) => {
@@ -183,6 +183,97 @@ export const addPrinter = async (req, res) => {
   }
 };
 
+// export const updatePrinter = async (req, res) => {
+//   try {
+//     const { printerId } = req.params;
+//     const { ip, name, active } = req.body;
+
+//     const update = {};
+//     if (ip     !== undefined) update["printerIps.$.ip"]     = ip;
+//     if (name   !== undefined) update["printerIps.$.name"]   = name;
+//     if (active !== undefined) update["printerIps.$.active"] = active;
+
+//     const profile = await RestaurantProfile.findOneAndUpdate(
+//       { "printerIps._id": printerId },
+//       { $set: update },
+//       { new: true },
+//     );
+//     if (!profile)
+//       return res.status(404).json({ success: false, message: "Printer not found" });
+
+//     res.status(200).json({ success: true, printer: profile.printerIps.id(printerId), data: profile });
+//   } catch (err) {
+//     console.error("[updatePrinter]", err);
+//     res.status(500).json({ success: false, message: "Failed to update printer" });
+//   }
+// };
+
+// export const deletePrinter = async (req, res) => {
+//   try {
+//     const { printerId } = req.params;
+//     const profile = await RestaurantProfile.findOneAndUpdate(
+//       {},
+//       { $pull: { printerIps: { _id: printerId } } },
+//       { new: true },
+//     );
+//     if (!profile)
+//       return res.status(404).json({ success: false, message: "Profile not found" });
+
+//     res.status(200).json({ success: true, data: profile, message: "Printer deleted" });
+//   } catch (err) {
+//     console.error("[deletePrinter]", err);
+//     res.status(500).json({ success: false, message: "Failed to delete printer" });
+//   }
+// };
+// ── Banners ────────────────────────────────────────────────────────────────────
+export const updateBanner = async (req, res) => {
+  try {
+    const { bannerId } = req.params;
+    const { link, active } = req.body;
+
+    const update = {};
+    if (link   !== undefined) update["banners.$.link"]   = link;
+    if (active !== undefined) update["banners.$.active"] = active !== "false" && active !== false;
+
+    const profile = await RestaurantProfile.findOneAndUpdate(
+      { "banners._id": bannerId },
+      { $set: update },
+      { new: true },
+    );
+    if (!profile)
+      return res.status(404).json({ success: false, message: "Banner not found" });
+
+    // ✅ .find() instead of .id()
+    const banner = profile.banners.find(b => b._id.toString() === bannerId);
+    res.status(200).json({ success: true, banner, data: profile });
+  } catch (err) {
+    console.error("[updateBanner]", err);
+    res.status(500).json({ success: false, message: "Failed to update banner" });
+  }
+};
+
+export const deleteBanner = async (req, res) => {
+  try {
+    const { bannerId } = req.params;
+
+    // ✅ Check profile exists first
+    const exists = await RestaurantProfile.findOne({ "banners._id": bannerId });
+    if (!exists)
+      return res.status(404).json({ success: false, message: "Banner not found" });
+
+    const profile = await RestaurantProfile.findOneAndUpdate(
+      {},
+      { $pull: { banners: { _id: bannerId } } },
+      { new: true },
+    );
+    res.status(200).json({ success: true, data: profile, message: "Banner deleted" });
+  } catch (err) {
+    console.error("[deleteBanner]", err);
+    res.status(500).json({ success: false, message: "Failed to delete banner" });
+  }
+};
+
+// ── Printer IPs ────────────────────────────────────────────────────────────────
 export const updatePrinter = async (req, res) => {
   try {
     const { printerId } = req.params;
@@ -201,7 +292,9 @@ export const updatePrinter = async (req, res) => {
     if (!profile)
       return res.status(404).json({ success: false, message: "Printer not found" });
 
-    res.status(200).json({ success: true, printer: profile.printerIps.id(printerId), data: profile });
+    // ✅ .find() instead of .id()
+    const printer = profile.printerIps.find(p => p._id.toString() === printerId);
+    res.status(200).json({ success: true, printer, data: profile });
   } catch (err) {
     console.error("[updatePrinter]", err);
     res.status(500).json({ success: false, message: "Failed to update printer" });
@@ -211,14 +304,17 @@ export const updatePrinter = async (req, res) => {
 export const deletePrinter = async (req, res) => {
   try {
     const { printerId } = req.params;
+
+    // ✅ Check printer exists first
+    const exists = await RestaurantProfile.findOne({ "printerIps._id": printerId });
+    if (!exists)
+      return res.status(404).json({ success: false, message: "Printer not found" });
+
     const profile = await RestaurantProfile.findOneAndUpdate(
       {},
       { $pull: { printerIps: { _id: printerId } } },
       { new: true },
     );
-    if (!profile)
-      return res.status(404).json({ success: false, message: "Profile not found" });
-
     res.status(200).json({ success: true, data: profile, message: "Printer deleted" });
   } catch (err) {
     console.error("[deletePrinter]", err);
