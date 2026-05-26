@@ -19,11 +19,16 @@ const chefSchema = new mongoose.Schema(
       enum: ["Active", "Inactive"],
       default: "Active",
     },
+    // createdBy: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "User", // admin who created this chef
+    //   required: true,
+    // },
     createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User", // admin who created this chef
-      required: true,
-    },
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "User",
+  required: false,
+},
   },
   {
     timestamps: true,

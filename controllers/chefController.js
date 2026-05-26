@@ -40,7 +40,8 @@ export const createChef = async (req, res) => {
       name: name.trim(),
       phone: phone.trim(),
       status: status || "Active",
-      createdBy: req.user._id,
+      // createdBy: req.user._id,
+      createdBy: req.user?._id || null,
     });
 
     res.status(201).json({

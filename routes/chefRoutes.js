@@ -5,7 +5,10 @@ import {
   getAllChefs,
   updateChefStatus,
 } from "../controllers/chefController.js";
+import { protect } from "../middleware/authMiddleware.js";
+// import { protect } from "../middleware/authMiddleware.js";
 const router = express.Router();
+router.use(protect);
 // const {
 //   getAllChefs,
 //   createChef,
