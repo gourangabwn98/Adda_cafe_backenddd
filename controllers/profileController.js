@@ -1,22 +1,15 @@
-// controllers/admin/restaurantProfile.controller.js
-
 import cloudinary from "../config/cloudinary.js";
 import { RestaurantProfile } from "../models/restaurantProfile.js";
 import streamifier from "streamifier";
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-/**
- * Upload a buffer to Cloudinary via a stream.
- * Returns the secure_url of the uploaded asset.
- */
-const uploadToCloudinary = (buffer, folder = "restaurant") =>
+// ── Helper ─────────────────────────────────────────────────────────────────────
+const uploadToCloudinary = (buffer, folder = "restaurant", transformOptions) =>
   new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder,
         allowed_formats: ["jpg", "jpeg", "png", "webp", "avif"],
-        transformation: [
+        transformation: transformOptions ?? [
           { width: 400, height: 400, crop: "limit", quality: "auto" },
         ],
       },
@@ -28,25 +21,14 @@ const uploadToCloudinary = (buffer, folder = "restaurant") =>
     streamifier.createReadStream(buffer).pipe(stream);
   });
 
-/**
- * Fetch (or seed) the single restaurant profile document.
- * There is always exactly ONE profile in the collection.
- */
 const getOrCreateProfile = async () => {
   let profile = await RestaurantProfile.findOne();
-  if (!profile) {
-    profile = await RestaurantProfile.create({
-      restaurantName: "My Restaurant",
-    });
-  }
+  if (!profile)
+    profile = await RestaurantProfile.create({ restaurantName: "My Restaurant" });
   return profile;
 };
 
-// ── Controllers ────────────────────────────────────────────────────────────────
-
-/**
- * GET /admin/restaurant/profile
- */
+// ── Profile ────────────────────────────────────────────────────────────────────
 export const getProfile = async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
@@ -57,78 +39,189 @@ export const getProfile = async (req, res) => {
   }
 };
 
-/**
- * PUT /admin/restaurant/profile
- */
 export const updateProfile = async (req, res) => {
   try {
-    // Fields the client must NOT be able to overwrite via this endpoint
-    const PROTECTED = ["_id", "__v", "createdAt", "updatedAt", "logo"];
-
-    // Strip protected fields from payload
+    const PROTECTED = ["_id", "__v", "createdAt", "updatedAt", "logo", "banners", "printerIps"];
     const payload = { ...req.body };
     PROTECTED.forEach((key) => delete payload[key]);
 
-    // Parse nested numeric/boolean strings sent by some form libs
-    if (payload.latitude !== undefined)
-      payload.latitude = Number(payload.latitude) || null;
-    if (payload.longitude !== undefined)
-      payload.longitude = Number(payload.longitude) || null;
+    if (payload.latitude  !== undefined) payload.latitude  = Number(payload.latitude)  || null;
+    if (payload.longitude !== undefined) payload.longitude = Number(payload.longitude) || null;
 
     const profile = await RestaurantProfile.findOneAndUpdate(
       {},
       { $set: payload },
       { new: true, upsert: true, runValidators: true },
     );
-
-    res.status(200).json({
-      success: true,
-      data: profile,
-      message: "Profile updated successfully",
-    });
+    res.status(200).json({ success: true, data: profile, message: "Profile updated successfully" });
   } catch (err) {
     console.error("[updateProfile]", err);
-    if (err.name === "ValidationError") {
+    if (err.name === "ValidationError")
       return res.status(422).json({ success: false, message: err.message });
-    }
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to update profile" });
+    res.status(500).json({ success: false, message: "Failed to update profile" });
   }
 };
 
-/**
- * POST /admin/restaurant/logo
- * Expects multipart/form-data with field name "logo"
- */
+// ── Logo ───────────────────────────────────────────────────────────────────────
 export const uploadLogo = async (req, res) => {
   try {
-    if (!req.file) {
-      return res
-        .status(400)
-        .json({ success: false, message: "No file uploaded" });
-    }
+    if (!req.file)
+      return res.status(400).json({ success: false, message: "No file uploaded" });
 
-    const logoUrl = await uploadToCloudinary(
-      req.file.buffer,
-      "restaurant/logos",
-    );
-
-    // Save URL to profile
+    const logoUrl = await uploadToCloudinary(req.file.buffer, "restaurant/logos");
     const profile = await RestaurantProfile.findOneAndUpdate(
       {},
       { $set: { logo: logoUrl } },
       { new: true, upsert: true },
     );
-
-    res.status(200).json({
-      success: true,
-      logoUrl,
-      data: profile,
-      message: "Logo uploaded successfully",
-    });
+    res.status(200).json({ success: true, logoUrl, data: profile, message: "Logo uploaded successfully" });
   } catch (err) {
     console.error("[uploadLogo]", err);
     res.status(500).json({ success: false, message: "Failed to upload logo" });
+  }
+};
+
+// ── Banners ────────────────────────────────────────────────────────────────────
+export const uploadBanner = async (req, res) => {
+  try {
+    if (!req.file)
+      return res.status(400).json({ success: false, message: "No file uploaded" });
+
+    const imageUrl = await uploadToCloudinary(
+      req.file.buffer,
+      "restaurant/banners",
+      [{ width: 1200, height: 400, crop: "limit", quality: "auto" }],
+    );
+
+    const newBanner = {
+      imageUrl,
+      link:   req.body.link ?? "",
+      active: req.body.active !== "false",
+    };
+
+    const profile = await RestaurantProfile.findOneAndUpdate(
+      {},
+      { $push: { banners: newBanner } },
+      { new: true, upsert: true },
+    );
+
+    res.status(201).json({
+      success: true,
+      banner:  profile.banners.at(-1),
+      data:    profile,
+      message: "Banner uploaded successfully",
+    });
+  } catch (err) {
+    console.error("[uploadBanner]", err);
+    res.status(500).json({ success: false, message: "Failed to upload banner" });
+  }
+};
+
+export const updateBanner = async (req, res) => {
+  try {
+    const { bannerId } = req.params;
+    const { link, active } = req.body;
+
+    const update = {};
+    if (link   !== undefined) update["banners.$.link"]   = link;
+    if (active !== undefined) update["banners.$.active"] = active !== "false" && active !== false;
+
+    const profile = await RestaurantProfile.findOneAndUpdate(
+      { "banners._id": bannerId },
+      { $set: update },
+      { new: true },
+    );
+    if (!profile)
+      return res.status(404).json({ success: false, message: "Banner not found" });
+
+    res.status(200).json({ success: true, banner: profile.banners.id(bannerId), data: profile });
+  } catch (err) {
+    console.error("[updateBanner]", err);
+    res.status(500).json({ success: false, message: "Failed to update banner" });
+  }
+};
+
+export const deleteBanner = async (req, res) => {
+  try {
+    const { bannerId } = req.params;
+    const profile = await RestaurantProfile.findOneAndUpdate(
+      {},
+      { $pull: { banners: { _id: bannerId } } },
+      { new: true },
+    );
+    if (!profile)
+      return res.status(404).json({ success: false, message: "Profile not found" });
+
+    res.status(200).json({ success: true, data: profile, message: "Banner deleted" });
+  } catch (err) {
+    console.error("[deleteBanner]", err);
+    res.status(500).json({ success: false, message: "Failed to delete banner" });
+  }
+};
+
+// ── Printer IPs ────────────────────────────────────────────────────────────────
+export const addPrinter = async (req, res) => {
+  try {
+    const { ip, name = "Printer", active = true } = req.body;
+    if (!ip)
+      return res.status(400).json({ success: false, message: "IP address is required" });
+
+    const profile = await RestaurantProfile.findOneAndUpdate(
+      {},
+      { $push: { printerIps: { ip, name, active } } },
+      { new: true, upsert: true },
+    );
+    res.status(201).json({
+      success: true,
+      printer: profile.printerIps.at(-1),
+      data:    profile,
+      message: "Printer added successfully",
+    });
+  } catch (err) {
+    console.error("[addPrinter]", err);
+    res.status(500).json({ success: false, message: "Failed to add printer" });
+  }
+};
+
+export const updatePrinter = async (req, res) => {
+  try {
+    const { printerId } = req.params;
+    const { ip, name, active } = req.body;
+
+    const update = {};
+    if (ip     !== undefined) update["printerIps.$.ip"]     = ip;
+    if (name   !== undefined) update["printerIps.$.name"]   = name;
+    if (active !== undefined) update["printerIps.$.active"] = active;
+
+    const profile = await RestaurantProfile.findOneAndUpdate(
+      { "printerIps._id": printerId },
+      { $set: update },
+      { new: true },
+    );
+    if (!profile)
+      return res.status(404).json({ success: false, message: "Printer not found" });
+
+    res.status(200).json({ success: true, printer: profile.printerIps.id(printerId), data: profile });
+  } catch (err) {
+    console.error("[updatePrinter]", err);
+    res.status(500).json({ success: false, message: "Failed to update printer" });
+  }
+};
+
+export const deletePrinter = async (req, res) => {
+  try {
+    const { printerId } = req.params;
+    const profile = await RestaurantProfile.findOneAndUpdate(
+      {},
+      { $pull: { printerIps: { _id: printerId } } },
+      { new: true },
+    );
+    if (!profile)
+      return res.status(404).json({ success: false, message: "Profile not found" });
+
+    res.status(200).json({ success: true, data: profile, message: "Printer deleted" });
+  } catch (err) {
+    console.error("[deletePrinter]", err);
+    res.status(500).json({ success: false, message: "Failed to delete printer" });
   }
 };

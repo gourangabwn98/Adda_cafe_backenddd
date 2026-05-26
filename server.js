@@ -79,10 +79,13 @@ app.use("/api/auth", authRoutes);
 app.use("/api/menu", menuRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/invoices", invoiceRoutes);
-app.use("/api/admin", adminRoutes);
+
+
 app.use("/api/admin/tables", tableRoutes);
 app.use("/api/admin/chefs", chefRoutes);
 app.use("/api/admin/restaurant", profileRoutes);
+
+app.use("/api/admin", adminRoutes);
 app.use("/api/categories", catagoryRoutes);
 // app.use("/api/chefs", require("./routes/chefRoutes.js"));
 
