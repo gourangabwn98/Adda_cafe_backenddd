@@ -23,7 +23,7 @@ export const generateInvoice = async (req, res) => {
 
     const safeUserId = userId && userId !== "guest" ? userId : null;
 
-    const invoice = await invoice.create({
+    const invoice = await Invoice.create({
       orders:  orders || [],
       user:    safeUserId,
       isGuest: isGuest || false,
