@@ -1,5 +1,6 @@
 // ─── controllers/invoiceController.js ────────────────────────────────────────
-import { Invoice } from "../models/Invoice.js";
+import  Invoice  from "../models/invoiceModel.js";
+// import invoiceModel from "../models/invoiceModel.js";
 import { Order }   from "../models/Order.js";
 import { io }      from "../server.js";
 
@@ -22,7 +23,7 @@ export const generateInvoice = async (req, res) => {
 
     const safeUserId = userId && userId !== "guest" ? userId : null;
 
-    const invoice = await Invoice.create({
+    const invoice = await invoiceModel.create({
       orders:  orders || [],
       user:    safeUserId,
       isGuest: isGuest || false,
@@ -91,6 +92,7 @@ export const getAllInvoices = async (req, res) => {
 // Step 2: mark all linked orders as Completed
 // Step 3: emit bill-print socket → print service on PC prints thermal receipt
 export const updateInvoiceStatus = async (req, res) => {
+  console.log("🔵 updateInvoiceStatus called", req.params, req.body); 
   try {
     const { id }     = req.params;
     const { status } = req.body;
