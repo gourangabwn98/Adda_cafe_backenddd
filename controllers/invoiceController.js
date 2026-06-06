@@ -23,16 +23,30 @@ export const generateInvoice = async (req, res) => {
     // Fix invalid guest userId
     const safeUserId = userId && userId !== "guest" ? userId : null;
 
-    const invoice = await Invoice.create({
-      orders:  orders || [],
-      user:    safeUserId,
-      isGuest: isGuest || false,
-      items:   safeItems,
-      subtotal,
-      tax,
-      total,
-      tableNo: tableNo || null,
-    });
+    // In updateInvoiceStatus, change the Invoice query to populate orders with waiterName
+const invoice = await Invoice.findByIdAndUpdate(
+  id,
+  {
+    status,
+    paymentStatus: status === "completed" ? "Paid" : "Pending",
+  },
+  { new: true }
+).populate("orders", "waiterName tableNo")   // ← add this
+.lean();
+
+// Then in the billPayload, add:
+const billPayload = {
+  type:        "BILL",
+  invoiceId:   invoice._id.toString(),
+  tableNo:     invoice.tableNo,
+  items:       invoice.items || [],
+  subtotal:    invoice.subtotal,
+  tax:         invoice.tax,
+  total:       invoice.total,
+  waiterName:  invoice.orders?.[0]?.waiterName || "",   // ← add this line
+  cafeName:    "ADDA CAFE",
+  printedAt:   new Date().toISOString(),
+};
 
     res.status(201).json(invoice);
   } catch (err) {
