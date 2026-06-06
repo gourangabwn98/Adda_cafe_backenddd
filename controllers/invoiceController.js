@@ -1,9 +1,9 @@
 // ─── controllers/invoiceController.js ────────────────────────────────────────
 import { Invoice } from "../models/Invoice.js";
 import { Order }   from "../models/Order.js";
-import { io }      from "../server.js";   // ← your existing exported io
+import { io }      from "../server.js";
 
-// ── Generate Invoice (YOUR EXISTING CODE — unchanged) ─────────────────────────
+// ── Generate Invoice ──────────────────────────────────────────────────────────
 export const generateInvoice = async (req, res) => {
   try {
     const { orders, items, userId, isGuest, tableNo } = req.body;
@@ -20,33 +20,18 @@ export const generateInvoice = async (req, res) => {
     const tax     = subtotal * taxRate;
     const total   = subtotal + tax;
 
-    // Fix invalid guest userId
     const safeUserId = userId && userId !== "guest" ? userId : null;
 
-    // In updateInvoiceStatus, change the Invoice query to populate orders with waiterName
-const invoice = await Invoice.findByIdAndUpdate(
-  id,
-  {
-    status,
-    paymentStatus: status === "completed" ? "Paid" : "Pending",
-  },
-  { new: true }
-).populate("orders", "waiterName tableNo")   // ← add this
-.lean();
-
-// Then in the billPayload, add:
-const billPayload = {
-  type:        "BILL",
-  invoiceId:   invoice._id.toString(),
-  tableNo:     invoice.tableNo,
-  items:       invoice.items || [],
-  subtotal:    invoice.subtotal,
-  tax:         invoice.tax,
-  total:       invoice.total,
-  waiterName:  invoice.orders?.[0]?.waiterName || "",   // ← add this line
-  cafeName:    "ADDA CAFE",
-  printedAt:   new Date().toISOString(),
-};
+    const invoice = await Invoice.create({
+      orders:  orders || [],
+      user:    safeUserId,
+      isGuest: isGuest || false,
+      items:   safeItems,
+      subtotal,
+      tax,
+      total,
+      tableNo: tableNo || null,
+    });
 
     res.status(201).json(invoice);
   } catch (err) {
@@ -55,35 +40,33 @@ const billPayload = {
   }
 };
 
-// ── Get My Invoices (YOUR EXISTING CODE — unchanged) ──────────────────────────
+// ── Get My Invoices ───────────────────────────────────────────────────────────
 export const getMyInvoices = async (req, res) => {
   try {
     let invoices;
-
     if (req.user) {
       invoices = await Invoice.find({ user: req.user._id }).sort({ createdAt: -1 });
     } else {
       invoices = await Invoice.find({ isGuest: true }).sort({ createdAt: -1 });
     }
-
     res.json(invoices);
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch invoicess" });
+    res.status(500).json({ message: "Failed to fetch invoices" });
   }
 };
 
-// ── Get Invoice By ID (YOUR EXISTING CODE — unchanged) ────────────────────────
+// ── Get Invoice By ID ─────────────────────────────────────────────────────────
 export const getInvoiceById = async (req, res) => {
   try {
     const invoice = await Invoice.findById(req.params.id);
     if (!invoice) return res.status(404).json({ message: "Invoice not found" });
     res.json(invoice);
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch invoicce" });
+    res.status(500).json({ message: "Failed to fetch invoice" });
   }
 };
 
-// ── Get All Invoices for Admin ─────────────────────────────────────────────────
+// ── Get All Invoices for Admin ────────────────────────────────────────────────
 export const getAllInvoices = async (req, res) => {
   try {
     const { page = 1, limit = 50 } = req.query;
@@ -102,48 +85,51 @@ export const getAllInvoices = async (req, res) => {
   }
 };
 
-// ── Update Invoice Status ← NEW ───────────────────────────────────────────────
+// ── Update Invoice Status ─────────────────────────────────────────────────────
 // Called when waiter clicks "Print Bill"
-// → marks invoice completed → marks orders Completed → emits bill-print socket
+// Step 1: update invoice status in DB
+// Step 2: mark all linked orders as Completed
+// Step 3: emit bill-print socket → print service on PC prints thermal receipt
 export const updateInvoiceStatus = async (req, res) => {
   try {
     const { id }     = req.params;
     const { status } = req.body;
 
-    const invoice = await Invoice.findByIdAndUpdate(
-      id,
-      {
-        status,
-        paymentStatus: status === "completed" ? "Paid" : "Pending",
-      },
-      { new: true }
-    ).lean();
+    // Update status first
+    await Invoice.findByIdAndUpdate(id, {
+      status,
+      paymentStatus: status === "completed" ? "Paid" : "Pending",
+    });
+
+    // Re-fetch fresh so items, tableNo, subtotal etc. are all guaranteed present
+    const invoice = await Invoice.findById(id).lean();
 
     if (!invoice)
       return res.status(404).json({ message: "Invoice not found" });
 
     if (status === "completed") {
+
       // Mark all linked orders as Completed
       await Order.updateMany(
         { _id: { $in: invoice.orders } },
         { status: "Completed", paymentStatus: "Paid" }
       );
 
-      // Emit to Admin PC print service
-      // invoice.items is already saved by generateInvoice — no extra DB call needed
+      // Build payload for thermal printer
       const billPayload = {
         type:      "BILL",
         invoiceId: invoice._id.toString(),
         tableNo:   invoice.tableNo,
-        items:     invoice.items || [],
+        items:     invoice.items   || [],
         subtotal:  invoice.subtotal,
         tax:       invoice.tax,
         total:     invoice.total,
+        waiterName: "",
         cafeName:  "ADDA CAFE",
         printedAt: new Date().toISOString(),
       };
 
-      console.log(`🖨️  bill-print emitted → Table T${invoice.tableNo}`);
+      console.log(`🖨️  bill-print emitted → T${invoice.tableNo}  items: ${billPayload.items.length}  total: ${billPayload.total}`);
       io.emit("bill-print", billPayload);
     }
 
