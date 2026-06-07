@@ -326,112 +326,164 @@ export const getAllInvoices = async (req, res) => {
 //     res.status(500).json({ message: "Failed to update invoice status" });
 //   }
 // };
+// export const updateInvoiceStatus = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { status, paymentStatus, notes } = req.body;
+
+//     // Allowed invoice statuses
+//     const allowedStatuses = [
+//       "pending",
+//       "completed",
+//       "paid",
+//       "cancelled",
+//       "refunded",
+//     ];
+
+//     if (!status || !allowedStatuses.includes(status.toLowerCase())) {
+//       return res.status(400).json({
+//         message: `Invalid status. Allowed: ${allowedStatuses.join(", ")}`,
+//       });
+//     }
+
+//     // Find the invoice
+//     const invoice = await Invoice.findById(id);
+
+//     if (!invoice) {
+//       return res.status(404).json({ message: "Invoice not found" });
+//     }
+
+//     // Optional: prevent changing already completed invoices (except refund)
+//     if (invoice.status === "completed" && status.toLowerCase() !== "refunded") {
+//       return res
+//         .status(403)
+//         .json({ message: "Cannot modify completed invoice (except refund)" });
+//     }
+
+//     // Update invoice status
+//     invoice.status = status.toLowerCase();
+
+//     // Optional: update payment status if provided
+//     if (paymentStatus) {
+//       invoice.paymentStatus = paymentStatus;
+//     }
+
+//     // Append notes with timestamp
+//     if (notes) {
+//       invoice.notes =
+//         (invoice.notes || "") + `\n${new Date().toISOString()} - ${notes}`;
+//     }
+
+//     // Special logic: When invoice is "completed" or "paid" → complete all related orders
+//     if (["completed", "paid"].includes(status.toLowerCase())) {
+//       if (invoice.orders && invoice.orders.length > 0) {
+//         await Order.updateMany(
+//           { _id: { $in: invoice.orders } },
+//           {
+//             $set: {
+//               status: "Completed",
+//               paymentStatus: "Paid",
+//               updatedAt: new Date(),
+//             },
+//           },
+//         );
+
+//         console.log(
+//           `Completed ${invoice.orders.length} orders for invoice ${id}`,
+//         );
+//       }
+//     }
+
+//     // Optional: Handle cancellation/refund (revert orders if needed)
+//     if (["cancelled", "refunded"].includes(status.toLowerCase())) {
+//       if (invoice.orders && invoice.orders.length > 0) {
+//         await Order.updateMany(
+//           { _id: { $in: invoice.orders } },
+//           {
+//             $set: {
+//               status: "Cancelled",
+//               updatedAt: new Date(),
+//             },
+//           },
+//         );
+
+//         console.log(
+//           `Cancelled ${invoice.orders.length} orders for invoice ${id}`,
+//         );
+//       }
+//     }
+
+//     // Save updated invoice
+//     const updatedInvoice = await invoice.save();
+
+//     // Return success response
+//     res.status(200).json({
+//       success: true,
+//       message: `Invoice status updated to ${status}`,
+//       data: updatedInvoice,
+//     });
+//   } catch (err) {
+//     console.error("updateInvoiceStatus error:", {
+//       message: err.message,
+//       stack: err.stack,
+//     });
+
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to update invoice status",
+//       error: process.env.NODE_ENV === "development" ? err.message : undefined,
+//     });
+//   }
+// };
 export const updateInvoiceStatus = async (req, res) => {
+  console.log("🔵 updateInvoiceStatus called", req.params, req.body); 
   try {
-    const { id } = req.params;
-    const { status, paymentStatus, notes } = req.body;
+    const { id }     = req.params;
+    const { status } = req.body;
 
-    // Allowed invoice statuses
-    const allowedStatuses = [
-      "pending",
-      "completed",
-      "paid",
-      "cancelled",
-      "refunded",
-    ];
+    // Update status first
+    await Invoice.findByIdAndUpdate(id, {
+      status,
+      paymentStatus: status === "completed" ? "Paid" : "Pending",
+    });
 
-    if (!status || !allowedStatuses.includes(status.toLowerCase())) {
-      return res.status(400).json({
-        message: `Invalid status. Allowed: ${allowedStatuses.join(", ")}`,
-      });
-    }
+    // Re-fetch fresh so items, tableNo, subtotal etc. are all guaranteed present
+    const invoice = await Invoice.findById(id).lean();
 
-    // Find the invoice
-    const invoice = await Invoice.findById(id);
-
-    if (!invoice) {
+    if (!invoice)
       return res.status(404).json({ message: "Invoice not found" });
+
+    if (status === "completed") {
+
+      // Mark all linked orders as Completed
+      await Order.updateMany(
+        { _id: { $in: invoice.orders } },
+        { status: "Completed", paymentStatus: "Paid" }
+      );
+
+      // Build payload for thermal printer
+      const billPayload = {
+        type:      "BILL",
+        invoiceId: invoice._id.toString(),
+        tableNo:   invoice.tableNo,
+        items:     invoice.items   || [],
+        subtotal:  invoice.subtotal,
+        tax:       invoice.tax,
+        total:     invoice.total,
+        waiterName: "",
+        cafeName:  "ADDA CAFE",
+        printedAt: new Date().toISOString(),
+      };
+
+      console.log(`🖨️  bill-print emitted → T${invoice.tableNo}  items: ${billPayload.items.length}  total: ${billPayload.total}`);
+      console.log("🖨️ emitting bill-print");
+console.log("Connected sockets:", io.engine.clientsCount);
+      io.emit("bill-print", billPayload);
     }
 
-    // Optional: prevent changing already completed invoices (except refund)
-    if (invoice.status === "completed" && status.toLowerCase() !== "refunded") {
-      return res
-        .status(403)
-        .json({ message: "Cannot modify completed invoice (except refund)" });
-    }
-
-    // Update invoice status
-    invoice.status = status.toLowerCase();
-
-    // Optional: update payment status if provided
-    if (paymentStatus) {
-      invoice.paymentStatus = paymentStatus;
-    }
-
-    // Append notes with timestamp
-    if (notes) {
-      invoice.notes =
-        (invoice.notes || "") + `\n${new Date().toISOString()} - ${notes}`;
-    }
-
-    // Special logic: When invoice is "completed" or "paid" → complete all related orders
-    if (["completed", "paid"].includes(status.toLowerCase())) {
-      if (invoice.orders && invoice.orders.length > 0) {
-        await Order.updateMany(
-          { _id: { $in: invoice.orders } },
-          {
-            $set: {
-              status: "Completed",
-              paymentStatus: "Paid",
-              updatedAt: new Date(),
-            },
-          },
-        );
-
-        console.log(
-          `Completed ${invoice.orders.length} orders for invoice ${id}`,
-        );
-      }
-    }
-
-    // Optional: Handle cancellation/refund (revert orders if needed)
-    if (["cancelled", "refunded"].includes(status.toLowerCase())) {
-      if (invoice.orders && invoice.orders.length > 0) {
-        await Order.updateMany(
-          { _id: { $in: invoice.orders } },
-          {
-            $set: {
-              status: "Cancelled",
-              updatedAt: new Date(),
-            },
-          },
-        );
-
-        console.log(
-          `Cancelled ${invoice.orders.length} orders for invoice ${id}`,
-        );
-      }
-    }
-
-    // Save updated invoice
-    const updatedInvoice = await invoice.save();
-
-    // Return success response
-    res.status(200).json({
-      success: true,
-      message: `Invoice status updated to ${status}`,
-      data: updatedInvoice,
-    });
+    res.json({ message: "Invoice updated", invoice });
   } catch (err) {
-    console.error("updateInvoiceStatus error:", {
-      message: err.message,
-      stack: err.stack,
-    });
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to update invoice status",
-      error: process.env.NODE_ENV === "development" ? err.message : undefined,
-    });
+    console.error("updateInvoiceStatus error:", err);
+    res.status(500).json({ message: err.message });
   }
 };
