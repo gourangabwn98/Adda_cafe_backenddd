@@ -4,6 +4,15 @@ import { MenuItem } from "../models/MenuItem.js";
 import { Order } from "../models/Order.js";
 import Invoice from "../models/invoiceModel.js";
 import { io }      from "../server.js";
+import { RestaurantProfile } from "../models/restaurantProfile.js";
+
+export const generateInvoice = async (req, res) => {
+  // const profileDoc = await RestaurantProfile.findOne().lean();
+  // const taxRate = ((profileDoc?.gstRate ?? 18) / 100);
+   const profileDoc = await RestaurantProfile.findOne().lean();
+  const taxRate = ((profileDoc?.gstRate ?? 18) / 100);
+  // rest unchanged
+};
 
 // GET /api/admin/dashboard
 export const getDashboardStats = async (req, res) => {
