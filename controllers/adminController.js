@@ -3,6 +3,7 @@ import { User } from "../models/User.js";
 import { MenuItem } from "../models/MenuItem.js";
 import { Order } from "../models/Order.js";
 import Invoice from "../models/invoiceModel.js";
+import { io }      from "../server.js";
 
 // GET /api/admin/dashboard
 export const getDashboardStats = async (req, res) => {
