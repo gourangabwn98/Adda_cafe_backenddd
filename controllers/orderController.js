@@ -1,6 +1,7 @@
 import { MenuItem } from "../models/MenuItem.js";
 import { Order } from "../models/Order.js";
 import { io } from "../server.js";
+import { RestaurantProfile } from "../models/RestaurantProfile.js";
 
 // ─── ORDER CONTROLLER ────────────────────────────────────────────────────────
 
@@ -66,7 +67,12 @@ export const placeOrder = async (req, res) => {
   );
 
   const subtotal = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
-  const tax = Math.round(subtotal * 0.18);
+  // const tax = Math.round(subtotal * 0.18);
+  const restaurant = await RestaurantProfile.findOne();
+const tax = Math.round(
+  subtotal * ((restaurant?.gstRate || 0) / 100)
+);
+  
   const discount = subtotal > 400 ? 10 : 0;
   const total = subtotal + tax - discount;
 
