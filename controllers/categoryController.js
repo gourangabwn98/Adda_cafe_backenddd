@@ -57,3 +57,13 @@ export const updateCategory = async (req, res) => {
 
   res.json({ data: cat });
 };
+
+export const deleteCategory = async (req, res) => {
+  try {
+    const cat = await Category.findByIdAndDelete(req.params.id);
+    if (!cat) return res.status(404).json({ message: "Category not found" });
+    res.json({ success: true, message: "Category deleted" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete category" });
+  }
+};
