@@ -79,7 +79,7 @@ import {
 export const getMenu = async (req, res) => {
   try {
     const { category, tag, search } = req.query;
-    const filter = { isAvailable: true };
+    const filter = {  };
     if (category) filter.category = category;
     if (tag) filter.tag = tag;
     if (search) filter.name = { $regex: search, $options: "i" };
