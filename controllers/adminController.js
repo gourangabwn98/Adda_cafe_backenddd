@@ -5,12 +5,17 @@ import { Order } from "../models/Order.js";
 import Invoice from "../models/invoiceModel.js";
 import { io }      from "../server.js";
 import { RestaurantProfile } from "../models/restaurantProfile.js";
+// import { RestaurantProfile } from "../models/restaurantProfile.js";
 
 export const generateInvoice = async (req, res) => {
   // const profileDoc = await RestaurantProfile.findOne().lean();
   // const taxRate = ((profileDoc?.gstRate ?? 18) / 100);
    const profileDoc = await RestaurantProfile.findOne().lean();
+   console.log("profileDoc",profileDoc);
+   
   const taxRate = ((profileDoc?.gstRate ?? 18) / 100);
+  console.log("taxrate",taxRate);
+  
   // rest unchanged
 };
 
@@ -449,7 +454,7 @@ export const updateInvoiceStatus = async (req, res) => {
   console.log("🔵 updateInvoiceStatus called", req.params, req.body); 
   try {
     const { id }     = req.params;
-    const { status } = req.body;
+    const { status,printerName  } = req.body;
 
     // Update status first
     await Invoice.findByIdAndUpdate(id, {
@@ -482,6 +487,7 @@ export const updateInvoiceStatus = async (req, res) => {
         total:     invoice.total,
         waiterName: "",
         cafeName:  "ADDA CAFE",
+        billPrinter: printerName || "Mocktail",
         printedAt: new Date().toISOString(),
       };
 
