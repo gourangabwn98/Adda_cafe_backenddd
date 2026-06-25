@@ -95,7 +95,9 @@ export const updateInvoiceStatus = async (req, res) => {
   console.log("🔵 updateInvoiceStatus called", req.params, req.body); 
   try {
     const { id }     = req.params;
-    const { status } = req.body;
+    // const { status } = req.body;
+    // AFTER — read printerName from frontend
+const { status, printerName } = req.body;
 
     // Update status first
     await Invoice.findByIdAndUpdate(id, {
@@ -118,18 +120,32 @@ export const updateInvoiceStatus = async (req, res) => {
       );
 
       // Build payload for thermal printer
-      const billPayload = {
-        type:      "BILL",
-        invoiceId: invoice._id.toString(),
-        tableNo:   invoice.tableNo,
-        items:     invoice.items   || [],
-        subtotal:  invoice.subtotal,
-        tax:       invoice.tax,
-        total:     invoice.total,
-        waiterName: "",
-        cafeName:  "ADDA CAFE",
-        printedAt: new Date().toISOString(),
-      };
+      // const billPayload = {
+      //   type:      "BILL",
+      //   invoiceId: invoice._id.toString(),
+      //   tableNo:   invoice.tableNo,
+      //   items:     invoice.items   || [],
+      //   subtotal:  invoice.subtotal,
+      //   tax:       invoice.tax,
+      //   total:     invoice.total,
+      //   waiterName: "",
+      //   cafeName:  "ADDA CAFE",
+      //   printedAt: new Date().toISOString(),
+      // };
+      // AFTER
+const billPayload = {
+  type:      "BILL",
+  invoiceId: invoice._id.toString(),
+  tableNo:   invoice.tableNo,
+  items:     invoice.items   || [],
+  subtotal:  invoice.subtotal,
+  tax:       invoice.tax,
+  total:     invoice.total,
+  waiterName: "",
+  cafeName:  "ADDA CAFE",
+  billPrinter: printerName || "Mocktail",   // ← ADD THIS
+  printedAt: new Date().toISOString(),
+};
 
       console.log(`🖨️  bill-print emitted → T${invoice.tableNo}  items: ${billPayload.items.length}  total: ${billPayload.total}`);
       io.emit("bill-print", billPayload);
