@@ -1,7 +1,8 @@
 import { MenuItem } from "../models/MenuItem.js";
 import { Order } from "../models/Order.js";
+import { RestaurantProfile } from "../models/restaurantProfile.js";
 import { io } from "../server.js";
-import { RestaurantProfile } from "../models/RestaurantProfile.js";
+// import { RestaurantProfile } from "../models/RestaurantProfile.js";
 
 // ─── ORDER CONTROLLER ────────────────────────────────────────────────────────
 
