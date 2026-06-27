@@ -2,6 +2,7 @@
 import  Invoice  from "../models/invoiceModel.js";
 // import invoiceModel from "../models/invoiceModel.js";
 import { Order }   from "../models/Order.js";
+import { RestaurantProfile } from "../models/restaurantProfile.js";
 import { io }      from "../server.js";
 
 // ── Generate Invoice ──────────────────────────────────────────────────────────
@@ -17,8 +18,11 @@ export const generateInvoice = async (req, res) => {
       0,
     );
 
-    const taxRate = 0;
-    const tax     = subtotal * taxRate;
+     // ✅ FIXED — read from DB instead of hardcoded 0.18
+    const restaurant = await RestaurantProfile.findOne();
+    const taxRate    = (restaurant?.gstRate || 0) / 100;
+    
+    const tax     =Math.round(subtotal * taxRate);
     const total   = subtotal + tax;
 
     const safeUserId = userId && userId !== "guest" ? userId : null;
