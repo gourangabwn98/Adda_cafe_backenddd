@@ -17,7 +17,7 @@ export const generateInvoice = async (req, res) => {
       0,
     );
 
-    const taxRate = 0.18;
+    const taxRate = 0;
     const tax     = subtotal * taxRate;
     const total   = subtotal + tax;
 
