@@ -28,7 +28,7 @@ const restaurantProfileSchema = new mongoose.Schema(
     },
     gstRate: {
   type: Number,
-  default: 18,
+  default: 0,
 },
     logo: {
       type: String, // Cloudinary / S3 URL
