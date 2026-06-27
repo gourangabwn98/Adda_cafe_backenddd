@@ -21,7 +21,6 @@ export const generateInvoice = async (req, res) => {
      // ✅ FIXED — read from DB instead of hardcoded 0.18
     const restaurant = await RestaurantProfile.findOne();
     const taxRate    = (restaurant?.gstRate || 0) / 100;
-    
     const tax     =Math.round(subtotal * taxRate);
     const total   = subtotal + tax;
 
