@@ -56,7 +56,14 @@ export const placeOrder = async (req, res) => {
   const dbItems = await Promise.all(
     items.map(async (i) => {
       const m = await MenuItem.findById(i.menuItemId);
-      if (!m || !m.isAvailable) throw new Error(`${i.name} is not available`);
+      // if (!m || !m.isAvailable) throw new Error(`${i.name} is not available`);
+      if (!m) {
+  throw new Error(`Item not found. Please refresh the menu.`);
+}
+if (!m.isAvailable) {
+  throw new Error(`"${m.name}" is currently not available`);  
+  //               ↑ use m.name (from DB) not i.name (from request)
+}
 
       return {
         menuItem: m._id,
