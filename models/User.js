@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema(
     isVerified: { type: Boolean, default: false },
     vegMode: { type: Boolean, default: false },
     language: { type: String, default: "English" },
+     isAdmin: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

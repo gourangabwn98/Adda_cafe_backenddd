@@ -18,6 +18,35 @@ admin.initializeApp({
 // ─── AUTH CONTROLLER ──────────────────────────────────────────────────────────
 
 // POST /api/auth/firebase-verify
+// export const firebaseVerify = async (req, res) => {
+//   try {
+//     const { firebaseToken, name } = req.body;
+//     if (!firebaseToken)
+//       return res.status(400).json({ message: "Token required" });
+
+//     const decoded = await admin.auth().verifyIdToken(firebaseToken);
+//     const phone = decoded.phone_number?.replace("+91", "");
+
+//     if (!phone)
+//       return res.status(400).json({ message: "Phone number not found in token" });
+
+//     let user = await User.findOne({ phone });
+//     if (!user) user = new User({ phone });
+//     user.isVerified = true;
+//     if (name) user.name = name;
+//     await user.save();
+
+//     res.json({
+//       _id: user._id,
+//       name: user.name,
+//       phone: user.phone,
+//       token: generateToken(user._id),
+//     });
+//   } catch (err) {
+//     console.error("Firebase Verify Error:", err);
+//     res.status(401).json({ message: "Invalid or expired Firebase token" });
+//   }
+// };
 export const firebaseVerify = async (req, res) => {
   try {
     const { firebaseToken, name } = req.body;
@@ -30,7 +59,30 @@ export const firebaseVerify = async (req, res) => {
     if (!phone)
       return res.status(400).json({ message: "Phone number not found in token" });
 
+    const isAdminLogin = name === "Admin"; // ← admin panel always sends name="Admin"
+
     let user = await User.findOne({ phone });
+
+    // ── Admin panel gate — only existing isAdmin users may log in this way ──
+    if (isAdminLogin) {
+      if (!user || !user.isAdmin) {
+        return res
+          .status(403)
+          .json({ message: "You are not authorized to access the admin panel" });
+      }
+      user.isVerified = true;
+      await user.save();
+
+      return res.json({
+        _id: user._id,
+        name: user.name,
+        phone: user.phone,
+        isAdmin: user.isAdmin,
+        token: generateToken(user._id),
+      });
+    }
+
+    // ── Regular user-site login — exactly your original logic, untouched ──
     if (!user) user = new User({ phone });
     user.isVerified = true;
     if (name) user.name = name;
@@ -45,6 +97,26 @@ export const firebaseVerify = async (req, res) => {
   } catch (err) {
     console.error("Firebase Verify Error:", err);
     res.status(401).json({ message: "Invalid or expired Firebase token" });
+  }
+};
+// controllers/authController.js
+
+// ── NEW: gate OTP sending — only admin phones get this far ──
+export const checkAdminPhone = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ message: "Phone required" });
+
+    const user = await User.findOne({ phone, isAdmin: true });
+    if (!user) {
+      return res
+        .status(403)
+        .json({ message: "You are not authorized to access the admin panel" });
+    }
+    res.json({ isAdmin: true });
+  } catch (err) {
+    console.error("Check Admin Phone Error:", err);
+    res.status(500).json({ message: "Something went wrong" });
   }
 };
 

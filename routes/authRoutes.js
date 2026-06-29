@@ -12,6 +12,7 @@ const router = express.Router();
 
 // Public
 router.post("/firebase-verify", firebaseVerify);
+router.post("/check-admin-phone", checkAdminPhone);
 
 // Protected
 router.get("/profile", protect, getProfile);
