@@ -5,6 +5,7 @@ import {
   updateProfile,
   updateVegMode,
   updateLanguage,
+  checkAdminPhone,
 } from "../controllers/authController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
