@@ -44,91 +44,178 @@ import { io } from "../server.js";
 //   });
 //   res.status(201).json(order);
 // };
+// export const placeOrder = async (req, res) => {
+//   const { items, orderType, tableNo, orderId, isGuest } = req.body;
+//   console.log("dd",items, orderType, tableNo, orderId, isGuest);
+  
+
+//   if (!items?.length)
+//     return res.status(400).json({ message: "No items in order" });
+
+//   // Verify prices from DB
+//   const dbItems = await Promise.all(
+//     items.map(async (i) => {
+//       const m = await MenuItem.findById(i.menuItemId);
+//       // if (!m || !m.isAvailable) throw new Error(`${i.name} is not available`);
+//       if (!m) {
+//   throw new Error(`Item not found. Please refresh the menu.`);
+// }
+// if (!m.isAvailable) {
+//   throw new Error(`"${m.name}" is currently not available`);  
+//   //               ↑ use m.name (from DB) not i.name (from request)
+// }
+
+//       return {
+//         menuItem: m._id,
+//         name: m.name,
+//         price: m.price,
+//         qty: i.qty,
+//       };
+//     }),
+//   );
+
+//   const subtotal = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
+//   // const tax = Math.round(subtotal * 0.18);
+//   const restaurant = await RestaurantProfile.findOne();
+// const tax = Math.round(
+//   subtotal * ((restaurant?.gstRate || 0) / 100)
+// );
+  
+//   const discount = subtotal > 400 ? 10 : 0;
+//   const total = subtotal + tax - discount;
+
+//   const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000); // 3 min
+
+//   const order = await Order.create({
+//     orderId: orderId || undefined,
+//     user: req.user ? req.user._id : null,
+//     isGuest: isGuest || false,
+//     items: dbItems,
+//     subtotal,
+//     tax,
+//     discount,
+//     total,
+//     orderType: orderType || "Dining",
+//     tableNo,
+//     status: "Placed", // ⭐ IMPORTANT
+//     cancelDeadline,
+//   });
+
+//   // 🔥 AUTO CHANGE STATUS AFTER 3 MINUTES
+//   setTimeout(
+//     async () => {
+//       try {
+//         const current = await Order.findById(order._id);
+
+//         // Only update if still Placed (not cancelled)
+//         if (current && current.status === "Placed") {
+//           await Order.findByIdAndUpdate(order._id, {
+//             status: "Preparing",
+//           });
+
+//           console.log(`Order ${order._id} → Preparing`);
+//         }
+//       } catch (err) {
+//         console.error("Auto status update failed:", err);
+//       }
+//     },
+//     3 * 60 * 1000,
+//   ); // 3 minutes
+
+
+
+//  console.log("EMITTING ORDER");
+
+// io.emit("new-order", order);
+
+//   res.status(201).json(order);
+// };
 export const placeOrder = async (req, res) => {
   const { items, orderType, tableNo, orderId, isGuest } = req.body;
-  console.log("dd",items, orderType, tableNo, orderId, isGuest);
-  
 
   if (!items?.length)
     return res.status(400).json({ message: "No items in order" });
 
-  // Verify prices from DB
-  const dbItems = await Promise.all(
-    items.map(async (i) => {
-      const m = await MenuItem.findById(i.menuItemId);
-      // if (!m || !m.isAvailable) throw new Error(`${i.name} is not available`);
-      if (!m) {
-  throw new Error(`Item not found. Please refresh the menu.`);
-}
-if (!m.isAvailable) {
-  throw new Error(`"${m.name}" is currently not available`);  
-  //               ↑ use m.name (from DB) not i.name (from request)
-}
+  try {
+    const dbItems = await Promise.all(
+      items.map(async (i) => {
+        const m = await MenuItem.findById(i.menuItemId);
+        if (!m) throw new Error(`Item not found. Please refresh the menu.`);
+        if (!m.isAvailable) throw new Error(`"${m.name}" is currently not available`);
+        return { menuItem: m._id, name: m.name, price: m.price, qty: i.qty };
+      })
+    );
 
-      return {
-        menuItem: m._id,
-        name: m.name,
-        price: m.price,
-        qty: i.qty,
-      };
-    }),
-  );
+    // ── Fetch restaurant settings ─────────────────────────────────────────
+    const restaurant = await RestaurantProfile.findOne();
+    const gstRate         = (restaurant?.gstRate || 0) / 100;
+    const serviceCharge   = restaurant?.serviceCharge || 0; // flat per-item charge
 
-  const subtotal = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
-  // const tax = Math.round(subtotal * 0.18);
-  const restaurant = await RestaurantProfile.findOne();
-const tax = Math.round(
-  subtotal * ((restaurant?.gstRate || 0) / 100)
-);
-  
-  const discount = subtotal > 400 ? 10 : 0;
-  const total = subtotal + tax - discount;
+    const subtotal = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
+    const tax      = Math.round(subtotal * gstRate);
 
-  const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000); // 3 min
+    // ── Service charge: serviceCharge × total quantity ────────────────────
+    // e.g. 5 items ordered × ₹4 = ₹20
+    const totalQty        = dbItems.reduce((s, i) => s + i.qty, 0);
+    const serviceChargeAmt = serviceCharge * totalQty;
 
-  const order = await Order.create({
-    orderId: orderId || undefined,
-    user: req.user ? req.user._id : null,
-    isGuest: isGuest || false,
-    items: dbItems,
-    subtotal,
-    tax,
-    discount,
-    total,
-    orderType: orderType || "Dining",
-    tableNo,
-    status: "Placed", // ⭐ IMPORTANT
-    cancelDeadline,
-  });
+    // const discount = subtotal > 400 ? 10 : 0;
+    const total    = subtotal + tax + serviceChargeAmt ;
 
-  // 🔥 AUTO CHANGE STATUS AFTER 3 MINUTES
-  setTimeout(
-    async () => {
+    const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000);
+
+    const order = await Order.create({
+      orderId: orderId || undefined,
+      user: req.user ? req.user._id : null,
+      isGuest: isGuest || false,
+      items: dbItems,
+      subtotal,
+      tax,
+      serviceCharge: serviceChargeAmt, // ← store calculated amount
+      // discount,
+      total,
+      orderType: orderType || "Dining",
+      tableNo,
+      status: "Placed",
+      cancelDeadline,
+    });
+
+    // Emit immediately
+    io.emit("new-order", order);
+
+    // Auto Preparing after 3 min
+    setTimeout(async () => {
       try {
         const current = await Order.findById(order._id);
-
-        // Only update if still Placed (not cancelled)
         if (current && current.status === "Placed") {
-          await Order.findByIdAndUpdate(order._id, {
-            status: "Preparing",
-          });
-
+          const preparing = await Order.findByIdAndUpdate(
+            order._id,
+            { status: "Preparing" },
+            { new: true }
+          );
           console.log(`Order ${order._id} → Preparing`);
+          io.emit("kot-print", {
+            orderId:   preparing.orderId,
+            tableNo:   preparing.tableNo,
+            orderType: preparing.orderType,
+            items:     preparing.items,
+            status:    preparing.status,
+            createdAt: preparing.createdAt,
+            _id:       preparing._id,
+          });
+          io.emit("order-status-updated", preparing);
         }
       } catch (err) {
-        console.error("Auto status update failed:", err);
+        console.error("Auto Preparing update failed:", err);
       }
-    },
-    3 * 60 * 1000,
-  ); // 3 minutes
+    }, 3 * 60 * 1000);
 
+    res.status(201).json(order);
 
-
- console.log("EMITTING ORDER");
-
-io.emit("new-order", order);
-
-  res.status(201).json(order);
+  } catch (err) {
+    console.error("placeOrder error:", err.message);
+    res.status(400).json({ message: err.message });
+  }
 };
 
 // GET /api/orders/my
