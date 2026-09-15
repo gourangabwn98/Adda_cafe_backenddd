@@ -135,7 +135,7 @@ const ALLOWED_PAYMENT_METHODS = ["Cash", "Online"];
 const ALLOWED_PAYMENT_STATUSES = ["Pending", "Paid", "Failed"];
 
 export const placeOrder = async (req, res) => {
-  const { items, orderType, tableNo, orderId, isGuest, deliveryAddress, deliveryPhone, paymentMethod, paymentStatus } = req.body;
+  const { items, orderType, tableNo, orderId, isGuest, deliveryAddress, deliveryPhone, paymentMethod, paymentStatus, chefId, waiterName } = req.body;
 
   if (!items?.length)
     return res.status(400).json({ message: "No items in order" });
@@ -234,6 +234,10 @@ export const placeOrder = async (req, res) => {
       orderType: type,
       paymentMethod: resolvedPaymentMethod,
       paymentStatus: resolvedPaymentStatus,
+      // Only Waiter's CartPage sends these (see Waiter-wise daily revenue,
+      // adminController.getChefRevenue) — undefined for Admin/Client orders.
+      chefId: chefId || undefined,
+      waiterName: waiterName ? String(waiterName).trim().slice(0, 100) : undefined,
       tableNo: type === "Delivery" ? null : tableNo,
       ...(type === "Delivery" && {
         deliveryAddress: String(deliveryAddress).trim(),
