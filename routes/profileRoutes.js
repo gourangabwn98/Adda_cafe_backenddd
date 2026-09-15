@@ -46,6 +46,7 @@ import {
   updatePrinter,
   deletePrinter,
 } from "../controllers/profileController.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
@@ -59,20 +60,23 @@ const upload = multer({
 });
 
 // ── Profile ────────────────────────────────────────────────────────────────
+// GET stays public: restaurant-print-service fetches this at startup with no
+// login mechanism of its own, and guest customers in client/adda_cafe read it
+// (unauthenticated) to display GST before/without logging in.
 router.get   ("/profile",            getProfile);
-router.put   ("/profile",            updateProfile);
+router.put   ("/profile",            protect, updateProfile);
 
 // ── Logo ───────────────────────────────────────────────────────────────────
-router.post  ("/logo",               upload.single("logo"),   uploadLogo);
+router.post  ("/logo",               protect, upload.single("logo"),   uploadLogo);
 
 // ── Banners ────────────────────────────────────────────────────────────────
-router.post  ("/banner",             upload.single("banner"), uploadBanner);
-router.patch ("/banner/:bannerId",                            updateBanner);
-router.delete("/banner/:bannerId",                            deleteBanner);
+router.post  ("/banner",             protect, upload.single("banner"), uploadBanner);
+router.patch ("/banner/:bannerId",   protect,                          updateBanner);
+router.delete("/banner/:bannerId",   protect,                          deleteBanner);
 
 // ── Printer IPs ────────────────────────────────────────────────────────────
-router.post  ("/printer",                                     addPrinter);
-router.patch ("/printer/:printerId",                          updatePrinter);
-router.delete("/printer/:printerId",                          deletePrinter);
+router.post  ("/printer",            protect,                          addPrinter);
+router.patch ("/printer/:printerId", protect,                          updatePrinter);
+router.delete("/printer/:printerId", protect,                          deletePrinter);
 
 export default router;

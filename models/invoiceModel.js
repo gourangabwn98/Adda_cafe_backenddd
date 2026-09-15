@@ -39,6 +39,12 @@ const invoiceSchema = new mongoose.Schema(
       required: true,
     },
 
+    // 🧑‍🍳 Service charge amount
+    serviceCharge: {
+      type: Number,
+      default: 0,
+    },
+
     // 💳 Final payable amount
     total: {
       type: Number,

@@ -9,6 +9,10 @@ const orderItemSchema = new mongoose.Schema({
   name: { type: String, required: true },
   price: { type: Number, required: true },
   qty: { type: Number, required: true, min: 1 },
+  // Snapshot of the menu item's category at order time — used to decide
+  // service-charge exemption (see utils/serviceCharge.js) without an extra
+  // MenuItem lookup later (e.g. at invoice generation).
+  category: { type: String },
 });
 
 const orderSchema = new mongoose.Schema(

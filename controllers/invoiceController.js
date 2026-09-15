@@ -4,6 +4,7 @@ import  Invoice  from "../models/invoiceModel.js";
 import { Order }   from "../models/Order.js";
 import { RestaurantProfile } from "../models/restaurantProfile.js";
 import { io }      from "../server.js";
+import { isServiceChargeExempt } from "../utils/serviceCharge.js";
 
 // ── Generate Invoice ──────────────────────────────────────────────────────────
 export const generateInvoice = async (req, res) => {
@@ -19,10 +20,30 @@ export const generateInvoice = async (req, res) => {
     );
 
      // ✅ FIXED — read from DB instead of hardcoded 0.18
-    const restaurant = await RestaurantProfile.findOne();
+    // Sorted so this always agrees with profileController's singleton pick
+    // (see SINGLETON_SORT comment there) if more than one profile doc exists.
+    const restaurant = await RestaurantProfile.findOne().sort({ createdAt: 1 });
     const taxRate    = (restaurant?.gstRate || 0) / 100;
     const tax     =Math.round(subtotal * taxRate);
-    const total   = subtotal + tax;
+
+    // Service charge: prefer summing the amount already computed & stored on
+    // each linked Order at placement time (which already applies the
+    // Parcel/Water/Gas exemption — see utils/serviceCharge.js) so this stays
+    // in sync with orderController.placeOrder without recomputing rates.
+    // Falls back to a fresh calculation from the raw item list when no
+    // orders are linked (e.g. a direct item-only invoice).
+    let serviceCharge;
+    if (orders?.length) {
+      const linkedOrders = await Order.find({ _id: { $in: orders } }).select("serviceCharge");
+      serviceCharge = linkedOrders.reduce((sum, o) => sum + (o.serviceCharge || 0), 0);
+    } else {
+      const chargeableQty = safeItems
+        .filter((i) => !isServiceChargeExempt(i.category))
+        .reduce((sum, i) => sum + (i.qty || 0), 0);
+      serviceCharge = (restaurant?.serviceCharge || 0) * chargeableQty;
+    }
+
+    const total   = subtotal + tax + serviceCharge;
 
     const safeUserId = userId && userId !== "guest" ? userId : null;
 
@@ -33,6 +54,7 @@ export const generateInvoice = async (req, res) => {
       items:   safeItems,
       subtotal,
       tax,
+      serviceCharge,
       total,
       tableNo: tableNo || null,
     });
@@ -143,6 +165,7 @@ const billPayload = {
   items:     invoice.items   || [],
   subtotal:  invoice.subtotal,
   tax:       invoice.tax,
+  serviceCharge: invoice.serviceCharge || 0,
   total:     invoice.total,
   waiterName: "",
   cafeName:  "ADDA CAFE",

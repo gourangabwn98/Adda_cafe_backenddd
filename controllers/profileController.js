@@ -21,8 +21,17 @@ const uploadToCloudinary = (buffer, folder = "restaurant", transformOptions) =>
     streamifier.createReadStream(buffer).pipe(stream);
   });
 
+// NOTE: this collection is meant to hold exactly one document, but nothing
+// enforces that at the DB level. If more than one ever exists, a bare
+// `findOne({})` / `findOneAndUpdate({}, ...)` is NOT guaranteed by MongoDB to
+// return/target the same document on every call — so a save could land on a
+// different document than the next read, making edits look like they "don't
+// persist". Sorting by createdAt makes every call here agree on the same
+// (oldest) document deterministically, regardless of how many exist.
+const SINGLETON_SORT = { createdAt: 1 };
+
 const getOrCreateProfile = async () => {
-  let profile = await RestaurantProfile.findOne();
+  let profile = await RestaurantProfile.findOne().sort(SINGLETON_SORT);
   if (!profile)
     profile = await RestaurantProfile.create({ restaurantName: "My Restaurant" });
   return profile;
@@ -51,7 +60,7 @@ export const updateProfile = async (req, res) => {
     const profile = await RestaurantProfile.findOneAndUpdate(
       {},
       { $set: payload },
-      { new: true, upsert: true, runValidators: true },
+      { new: true, upsert: true, runValidators: true, sort: SINGLETON_SORT },
     );
     res.status(200).json({ success: true, data: profile, message: "Profile updated successfully" });
   } catch (err) {
@@ -72,7 +81,7 @@ export const uploadLogo = async (req, res) => {
     const profile = await RestaurantProfile.findOneAndUpdate(
       {},
       { $set: { logo: logoUrl } },
-      { new: true, upsert: true },
+      { new: true, upsert: true, sort: SINGLETON_SORT },
     );
     res.status(200).json({ success: true, logoUrl, data: profile, message: "Logo uploaded successfully" });
   } catch (err) {
@@ -102,7 +111,7 @@ export const uploadBanner = async (req, res) => {
     const profile = await RestaurantProfile.findOneAndUpdate(
       {},
       { $push: { banners: newBanner } },
-      { new: true, upsert: true },
+      { new: true, upsert: true, sort: SINGLETON_SORT },
     );
 
     res.status(201).json({
@@ -169,7 +178,7 @@ export const addPrinter = async (req, res) => {
     const profile = await RestaurantProfile.findOneAndUpdate(
       {},
       { $push: { printerIps: { ip, name, active } } },
-      { new: true, upsert: true },
+      { new: true, upsert: true, sort: SINGLETON_SORT },
     );
     res.status(201).json({
       success: true,
@@ -264,7 +273,7 @@ export const deleteBanner = async (req, res) => {
     const profile = await RestaurantProfile.findOneAndUpdate(
       {},
       { $pull: { banners: { _id: bannerId } } },
-      { new: true },
+      { new: true, sort: SINGLETON_SORT },
     );
     res.status(200).json({ success: true, data: profile, message: "Banner deleted" });
   } catch (err) {
@@ -313,7 +322,7 @@ export const deletePrinter = async (req, res) => {
     const profile = await RestaurantProfile.findOneAndUpdate(
       {},
       { $pull: { printerIps: { _id: printerId } } },
-      { new: true },
+      { new: true, sort: SINGLETON_SORT },
     );
     res.status(200).json({ success: true, data: profile, message: "Printer deleted" });
   } catch (err) {

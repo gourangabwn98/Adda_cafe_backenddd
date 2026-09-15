@@ -2,6 +2,7 @@ import { MenuItem } from "../models/MenuItem.js";
 import { Order } from "../models/Order.js";
 import { RestaurantProfile } from "../models/restaurantProfile.js";
 import { io } from "../server.js";
+import { isServiceChargeExempt } from "../utils/serviceCharge.js";
 // import { RestaurantProfile } from "../models/RestaurantProfile.js";
 
 // ─── ORDER CONTROLLER ────────────────────────────────────────────────────────
@@ -142,21 +143,26 @@ export const placeOrder = async (req, res) => {
         const m = await MenuItem.findById(i.menuItemId);
         if (!m) throw new Error(`Item not found. Please refresh the menu.`);
         if (!m.isAvailable) throw new Error(`"${m.name}" is currently not available`);
-        return { menuItem: m._id, name: m.name, price: m.price, qty: i.qty };
+        return { menuItem: m._id, name: m.name, price: m.price, qty: i.qty, category: m.category };
       })
     );
 
     // ── Fetch restaurant settings ─────────────────────────────────────────
-    const restaurant = await RestaurantProfile.findOne();
+    // Sorted so this always agrees with profileController's singleton pick
+    // (see SINGLETON_SORT comment there) if more than one profile doc exists.
+    const restaurant = await RestaurantProfile.findOne().sort({ createdAt: 1 });
     const gstRate         = (restaurant?.gstRate || 0) / 100;
     const serviceCharge   = restaurant?.serviceCharge || 0; // flat per-item charge
 
     const subtotal = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
     const tax      = Math.round(subtotal * gstRate);
 
-    // ── Service charge: serviceCharge × total quantity ────────────────────
-    // e.g. 5 items ordered × ₹4 = ₹20
-    const totalQty        = dbItems.reduce((s, i) => s + i.qty, 0);
+    // ── Service charge: serviceCharge × chargeable quantity ───────────────
+    // Parcel / Water / Gas items are exempt (see utils/serviceCharge.js).
+    // e.g. 5 chargeable items ordered × ₹4 = ₹20
+    const totalQty         = dbItems
+      .filter((i) => !isServiceChargeExempt(i.category))
+      .reduce((s, i) => s + i.qty, 0);
     const serviceChargeAmt = serviceCharge * totalQty;
 
     // const discount = subtotal > 400 ? 10 : 0;
