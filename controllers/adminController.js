@@ -484,6 +484,7 @@ export const updateInvoiceStatus = async (req, res) => {
         items:     invoice.items   || [],
         subtotal:  invoice.subtotal,
         tax:       invoice.tax,
+        serviceCharge: invoice.serviceCharge || 0,
         total:     invoice.total,
         waiterName: "",
         cafeName:  "ADDA CAFE",

@@ -9,6 +9,10 @@ const orderItemSchema = new mongoose.Schema({
   name: { type: String, required: true },
   price: { type: Number, required: true },
   qty: { type: Number, required: true, min: 1 },
+  // Snapshot of the menu item's category at order time — used to decide
+  // service-charge exemption (see utils/serviceCharge.js) without an extra
+  // MenuItem lookup later (e.g. at invoice generation).
+  category: { type: String },
 });
 
 const orderSchema = new mongoose.Schema(
@@ -27,18 +31,25 @@ const orderSchema = new mongoose.Schema(
     items: [orderItemSchema],
     subtotal: { type: Number, required: true },
     tax: { type: Number, required: true },
-    serviceCharge: { type: Number, default: 0 }, 
+    serviceCharge: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
+    // Flat delivery charge (see RestaurantProfile.deliveryBaseFee /
+    // freeDeliveryAbove) — only set when orderType is "Delivery".
+    deliveryFee: { type: Number, default: 0 },
     total: { type: Number, required: true },
     orderType: {
       type: String,
-      enum: ["Dining", "Take Away"],
+      enum: ["Dining", "Take Away", "Delivery"],
       default: "Dining",
     },
     tableNo: { type: Number, default: null },
+    // Only set when orderType is "Delivery".
+    deliveryAddress: { type: String },
+    deliveryPhone: { type: String },
     status: {
       type: String,
       enum: [
+        "PendingConfirmation",
         "Placed",
         "Preparing",
         "Ready",
@@ -46,7 +57,7 @@ const orderSchema = new mongoose.Schema(
         "Completed",
         "Cancelled",
       ],
-      default: "Placed",
+      default: "PendingConfirmation",
     },
     paymentStatus: {
       type: String,
@@ -55,6 +66,10 @@ const orderSchema = new mongoose.Schema(
     },
     rating: { type: Number, min: 1, max: 5 },
     cancelDeadline: { type: Date },
+    // Set when staff decline a PendingConfirmation order (e.g. item
+    // unavailable, kitchen too busy). Only meaningful when status is
+    // "Cancelled" as a result of a decline rather than a customer cancel.
+    declineReason: { type: String },
   },
   { timestamps: true },
 );
