@@ -9,6 +9,8 @@ import {
   rateOrder,
   changeOrderType,
   getOrderByOrderId,
+  acceptOrder,
+  declineOrder,
 } from "../controllers/orderController.js";
 import { optionalProtect, protect } from "../middleware/authMiddleware.js";
 
@@ -21,5 +23,8 @@ router.patch("/change-type/:orderId", changeOrderType);
 router.put("/:id/cancel", protect, cancelOrder);
 router.put("/:id/pay", protect, updatePayment);
 router.put("/:id/rate", protect, rateOrder);
+// Admin/Waiter confirm or decline a PendingConfirmation order request.
+router.put("/:id/accept", protect, acceptOrder);
+router.put("/:id/decline", protect, declineOrder);
 
 export default router;

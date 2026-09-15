@@ -32,10 +32,14 @@ export const generateInvoice = async (req, res) => {
     // in sync with orderController.placeOrder without recomputing rates.
     // Falls back to a fresh calculation from the raw item list when no
     // orders are linked (e.g. a direct item-only invoice).
+    // Delivery fee, same "sum from linked Orders" approach as service charge
+    // — stays correct if a Delivery order is ever included in an invoice.
     let serviceCharge;
+    let deliveryFee = 0;
     if (orders?.length) {
-      const linkedOrders = await Order.find({ _id: { $in: orders } }).select("serviceCharge");
+      const linkedOrders = await Order.find({ _id: { $in: orders } }).select("serviceCharge deliveryFee");
       serviceCharge = linkedOrders.reduce((sum, o) => sum + (o.serviceCharge || 0), 0);
+      deliveryFee   = linkedOrders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0);
     } else {
       const chargeableQty = safeItems
         .filter((i) => !isServiceChargeExempt(i.category))
@@ -43,7 +47,7 @@ export const generateInvoice = async (req, res) => {
       serviceCharge = (restaurant?.serviceCharge || 0) * chargeableQty;
     }
 
-    const total   = subtotal + tax + serviceCharge;
+    const total   = subtotal + tax + serviceCharge + deliveryFee;
 
     const safeUserId = userId && userId !== "guest" ? userId : null;
 
@@ -55,6 +59,7 @@ export const generateInvoice = async (req, res) => {
       subtotal,
       tax,
       serviceCharge,
+      deliveryFee,
       total,
       tableNo: tableNo || null,
     });

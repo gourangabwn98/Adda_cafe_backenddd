@@ -132,10 +132,15 @@ import { isServiceChargeExempt } from "../utils/serviceCharge.js";
 //   res.status(201).json(order);
 // };
 export const placeOrder = async (req, res) => {
-  const { items, orderType, tableNo, orderId, isGuest } = req.body;
+  const { items, orderType, tableNo, orderId, isGuest, deliveryAddress, deliveryPhone } = req.body;
 
   if (!items?.length)
     return res.status(400).json({ message: "No items in order" });
+
+  const type = orderType || "Dining";
+
+  if (type === "Delivery" && !String(deliveryAddress || "").trim())
+    return res.status(400).json({ message: "Delivery address is required" });
 
   try {
     const dbItems = await Promise.all(
@@ -155,6 +160,15 @@ export const placeOrder = async (req, res) => {
     const serviceCharge   = restaurant?.serviceCharge || 0; // flat per-item charge
 
     const subtotal = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
+
+    if (type === "Delivery") {
+      if (restaurant?.services?.delivery === false)
+        return res.status(400).json({ message: "Delivery is not available right now" });
+      const minOrder = restaurant?.minOrderAmount || 0;
+      if (minOrder > 0 && subtotal < minOrder)
+        return res.status(400).json({ message: `Minimum order for delivery is ₹${minOrder}` });
+    }
+
     const tax      = Math.round(subtotal * gstRate);
 
     // ── Service charge: serviceCharge × chargeable quantity ───────────────
@@ -165,8 +179,15 @@ export const placeOrder = async (req, res) => {
       .reduce((s, i) => s + i.qty, 0);
     const serviceChargeAmt = serviceCharge * totalQty;
 
+    // ── Delivery fee: flat RestaurantProfile.deliveryBaseFee, waived at/above
+    // freeDeliveryAbove. Only applies to Delivery orders.
+    const freeDeliveryAbove = restaurant?.freeDeliveryAbove || 0;
+    const deliveryFee = type === "Delivery"
+      ? (freeDeliveryAbove > 0 && subtotal >= freeDeliveryAbove ? 0 : (restaurant?.deliveryBaseFee || 0))
+      : 0;
+
     // const discount = subtotal > 400 ? 10 : 0;
-    const total    = subtotal + tax + serviceChargeAmt ;
+    const total    = subtotal + tax + serviceChargeAmt + deliveryFee;
 
     const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000);
 
@@ -178,18 +199,52 @@ export const placeOrder = async (req, res) => {
       subtotal,
       tax,
       serviceCharge: serviceChargeAmt, // ← store calculated amount
+      deliveryFee,
       // discount,
       total,
-      orderType: orderType || "Dining",
-      tableNo,
-      status: "Placed",
+      orderType: type,
+      tableNo: type === "Delivery" ? null : tableNo,
+      ...(type === "Delivery" && {
+        deliveryAddress: String(deliveryAddress).trim(),
+        deliveryPhone: deliveryPhone ? String(deliveryPhone).trim() : undefined,
+      }),
+      status: "PendingConfirmation",
       cancelDeadline,
     });
 
-    // Emit immediately
-    io.emit("new-order", order);
+    // Notify admin/Waiter of a new request awaiting confirmation. This does
+    // NOT trigger KOT printing — printing starts only once staff accept the
+    // order (see acceptOrder below), which is when "new-order" now fires.
+    io.emit("order-request", order);
 
-    // Auto Preparing after 3 min
+    res.status(201).json(order);
+
+  } catch (err) {
+    console.error("placeOrder error:", err.message);
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// PUT /api/orders/:id/accept — admin or Waiter confirms a pending request.
+// Whoever accepts first wins; a second accept/decline on an already-resolved
+// order is rejected rather than silently reprocessed.
+export const acceptOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (order.status !== "PendingConfirmation")
+      return res.status(400).json({ message: `Order is already ${order.status}` });
+
+    order.status = "Placed";
+    await order.save();
+
+    // This is the same event/shape restaurant-print-service has always
+    // listened for — only the timing moved (from placement to acceptance).
+    io.emit("new-order", order);
+    io.emit("order-status-updated", order);
+
+    // Auto Preparing 3 minutes after acceptance (unchanged behavior, just
+    // now measured from acceptance instead of from placement).
     setTimeout(async () => {
       try {
         const current = await Order.findById(order._id);
@@ -216,11 +271,33 @@ export const placeOrder = async (req, res) => {
       }
     }, 3 * 60 * 1000);
 
-    res.status(201).json(order);
-
+    res.json(order);
   } catch (err) {
-    console.error("placeOrder error:", err.message);
-    res.status(400).json({ message: err.message });
+    console.error("acceptOrder error:", err.message);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// PUT /api/orders/:id/decline — admin or Waiter declines a pending request
+// (e.g. item unavailable, kitchen too busy).
+export const declineOrder = async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (order.status !== "PendingConfirmation")
+      return res.status(400).json({ message: `Order is already ${order.status}` });
+
+    order.status = "Cancelled";
+    order.declineReason = reason || "Declined by staff";
+    await order.save();
+
+    io.emit("order-status-updated", order);
+
+    res.json(order);
+  } catch (err) {
+    console.error("declineOrder error:", err.message);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -290,12 +367,13 @@ export const changeOrderType = async (req, res) => {
 export const cancelOrder = async (req, res) => {
   const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
   if (!order) return res.status(404).json({ message: "Order not found" });
-  if (order.status !== "Placed")
+  if (!["PendingConfirmation", "Placed"].includes(order.status))
     return res.status(400).json({ message: "Cannot cancel this order" });
   if (new Date() > order.cancelDeadline)
     return res.status(400).json({ message: "Cancel window expired" });
   order.status = "Cancelled";
   await order.save();
+  io.emit("order-status-updated", order);
   res.json({ message: "Order cancelled", order });
 };
 
