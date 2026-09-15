@@ -521,6 +521,13 @@ export const updateInvoiceStatus = async (req, res) => {
       const billPaymentMethod =
         [...new Set(linkedOrders.map((o) => o.paymentMethod).filter(Boolean))].join(", ") || "Cash";
 
+      // Restaurant info for the printed bill heading (Admin → Profile →
+      // Restaurant Logo/name/address/phone) — read fresh right here so a
+      // logo/address change takes effect on the very next bill printed,
+      // with no caching or print-service restart involved. Same singleton
+      // sort used everywhere else this profile is read (profileController.js).
+      const profile = await RestaurantProfile.findOne().sort({ createdAt: 1 }).lean();
+
       // Build payload for thermal printer
       const billPayload = {
         type:      "BILL",
@@ -541,6 +548,14 @@ export const updateInvoiceStatus = async (req, res) => {
         // reflects that.
         paymentMethod: billPaymentMethod,
         paymentStatus: "Paid",
+        restaurant: profile
+          ? {
+              name: profile.restaurantName,
+              logo: profile.logo || undefined,
+              address: profile.address || undefined,
+              phone: profile.phone || undefined,
+            }
+          : null,
       };
 
       console.log(`🖨️  bill-print emitted → T${invoice.tableNo}  items: ${billPayload.items.length}  total: ${billPayload.total}`);
