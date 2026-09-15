@@ -13,6 +13,11 @@ const orderItemSchema = new mongoose.Schema({
   // service-charge exemption (see utils/serviceCharge.js) without an extra
   // MenuItem lookup later (e.g. at invoice generation).
   category: { type: String },
+  // Free-text prep note for this item (e.g. "no onions", "extra spicy"),
+  // settable by admin, customer (client), or Waiter. Printed on the KOT —
+  // see restaurant-print-service/index.js buildKOT(), which already prints
+  // `item.notes` when present.
+  notes: { type: String },
 });
 
 const orderSchema = new mongoose.Schema(
