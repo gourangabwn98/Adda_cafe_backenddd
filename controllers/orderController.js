@@ -131,8 +131,11 @@ import { isServiceChargeExempt } from "../utils/serviceCharge.js";
 
 //   res.status(201).json(order);
 // };
+const ALLOWED_PAYMENT_METHODS = ["Cash", "Online"];
+const ALLOWED_PAYMENT_STATUSES = ["Pending", "Paid", "Failed"];
+
 export const placeOrder = async (req, res) => {
-  const { items, orderType, tableNo, orderId, isGuest, deliveryAddress, deliveryPhone } = req.body;
+  const { items, orderType, tableNo, orderId, isGuest, deliveryAddress, deliveryPhone, paymentMethod, paymentStatus } = req.body;
 
   if (!items?.length)
     return res.status(400).json({ message: "No items in order" });
@@ -141,6 +144,29 @@ export const placeOrder = async (req, res) => {
 
   if (type === "Delivery" && !String(deliveryAddress || "").trim())
     return res.status(400).json({ message: "Delivery address is required" });
+
+  // Payment method: Cash or Online only (payment-type selection, not a
+  // payment gateway — see utils/serviceCharge.js-style validation pattern).
+  // A caller that hasn't been updated to send one yet (e.g. the client
+  // reorder flow) still works — it just gets the safe "Cash" default;
+  // an explicitly invalid value is rejected outright.
+  let resolvedPaymentMethod = "Cash";
+  if (paymentMethod !== undefined && paymentMethod !== null && paymentMethod !== "") {
+    if (!ALLOWED_PAYMENT_METHODS.includes(paymentMethod))
+      return res.status(400).json({ message: "paymentMethod must be either Cash or Online" });
+    resolvedPaymentMethod = paymentMethod;
+  }
+
+  // Payment status at placement time — e.g. Waiter marking a cash order
+  // already paid at the table. Defaults to the schema default ("Pending" /
+  // "Unpaid" in the UI) when not sent, same backward-compatible pattern as
+  // paymentMethod above.
+  let resolvedPaymentStatus = "Pending";
+  if (paymentStatus !== undefined && paymentStatus !== null && paymentStatus !== "") {
+    if (!ALLOWED_PAYMENT_STATUSES.includes(paymentStatus))
+      return res.status(400).json({ message: "paymentStatus must be Pending, Paid, or Failed" });
+    resolvedPaymentStatus = paymentStatus;
+  }
 
   try {
     const dbItems = await Promise.all(
@@ -206,6 +232,8 @@ export const placeOrder = async (req, res) => {
       // discount,
       total,
       orderType: type,
+      paymentMethod: resolvedPaymentMethod,
+      paymentStatus: resolvedPaymentStatus,
       tableNo: type === "Delivery" ? null : tableNo,
       ...(type === "Delivery" && {
         deliveryAddress: String(deliveryAddress).trim(),

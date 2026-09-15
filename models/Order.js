@@ -69,6 +69,16 @@ const orderSchema = new mongoose.Schema(
       enum: ["Pending", "Paid", "Failed"],
       default: "Pending",
     },
+    // How the customer/staff said they'll pay — distinct from paymentStatus
+    // (which tracks whether that payment has actually been confirmed). No
+    // default at the schema level so older orders created before this field
+    // existed keep reading back fine with paymentMethod simply absent; new
+    // orders get a value from orderController.placeOrder (defaults to
+    // "Cash" there if the client didn't send one).
+    paymentMethod: {
+      type: String,
+      enum: ["Cash", "Online"],
+    },
     rating: { type: Number, min: 1, max: 5 },
     cancelDeadline: { type: Date },
     // Set when staff decline a PendingConfirmation order (e.g. item
