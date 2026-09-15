@@ -148,7 +148,10 @@ export const placeOrder = async (req, res) => {
         const m = await MenuItem.findById(i.menuItemId);
         if (!m) throw new Error(`Item not found. Please refresh the menu.`);
         if (!m.isAvailable) throw new Error(`"${m.name}" is currently not available`);
-        return { menuItem: m._id, name: m.name, price: m.price, qty: i.qty, category: m.category };
+        return {
+          menuItem: m._id, name: m.name, price: m.price, qty: i.qty, category: m.category,
+          notes: i.notes ? String(i.notes).trim().slice(0, 200) : undefined,
+        };
       })
     );
 
