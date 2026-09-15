@@ -183,14 +183,33 @@ export const getAllOrders = async (req, res) => {
 };
 
 // PUT /api/admin/orders/:id/status
+// Accepts `status` (unchanged, existing behavior) and, optionally,
+// `paymentStatus` and/or `paymentMethod` so admin can correct either after
+// the order was already placed — e.g. a "Cash" order that was actually paid
+// online, or marking an order Paid once cash is collected in person.
 export const updateOrderStatus = async (req, res) => {
   try {
-    const { status } = req.body;
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true },
-    );
+    const { status, paymentStatus, paymentMethod } = req.body;
+    const update = {};
+
+    if (status !== undefined) update.status = status;
+
+    if (paymentStatus !== undefined) {
+      if (!["Pending", "Paid", "Failed"].includes(paymentStatus))
+        return res.status(400).json({ message: "paymentStatus must be Pending, Paid, or Failed" });
+      update.paymentStatus = paymentStatus;
+    }
+
+    if (paymentMethod !== undefined) {
+      if (!["Cash", "Online"].includes(paymentMethod))
+        return res.status(400).json({ message: "paymentMethod must be either Cash or Online" });
+      update.paymentMethod = paymentMethod;
+    }
+
+    if (!Object.keys(update).length)
+      return res.status(400).json({ message: "Nothing to update" });
+
+    const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!order) return res.status(404).json({ message: "Order not found" });
     res.json(order);
   } catch (err) {
@@ -476,6 +495,16 @@ export const updateInvoiceStatus = async (req, res) => {
         { status: "Completed", paymentStatus: "Paid" }
       );
 
+      // paymentMethod isn't touched by the updateMany above (only status/
+      // paymentStatus are) — read it back from the linked orders so the
+      // printed bill shows what the customer actually chose. Usually all
+      // one table's orders share a method; joined as a fallback if they
+      // ever differ (mirrors the same pattern used in Waiter's TablesPage
+      // merged-bill display).
+      const linkedOrders = await Order.find({ _id: { $in: invoice.orders } }).select("paymentMethod").lean();
+      const billPaymentMethod =
+        [...new Set(linkedOrders.map((o) => o.paymentMethod).filter(Boolean))].join(", ") || "Cash";
+
       // Build payload for thermal printer
       const billPayload = {
         type:      "BILL",
@@ -490,6 +519,12 @@ export const updateInvoiceStatus = async (req, res) => {
         cafeName:  "ADDA CAFE",
         billPrinter: printerName || "Mocktail",
         printedAt: new Date().toISOString(),
+        // Payment method/status selection — not a payment gateway. The
+        // linked orders were just set to paymentStatus "Paid" above (that's
+        // what "completing" a bill means in this system), so the bill
+        // reflects that.
+        paymentMethod: billPaymentMethod,
+        paymentStatus: "Paid",
       };
 
       console.log(`🖨️  bill-print emitted → T${invoice.tableNo}  items: ${billPayload.items.length}  total: ${billPayload.total}`);
