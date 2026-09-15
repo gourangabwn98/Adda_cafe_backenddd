@@ -269,13 +269,16 @@ export const acceptOrder = async (req, res) => {
     order.status = "Placed";
     await order.save();
 
-    // This is the same event/shape restaurant-print-service has always
-    // listened for — only the timing moved (from placement to acceptance).
-    io.emit("new-order", order);
+    // KOT printing no longer happens here — it now fires when the order
+    // actually reaches "Preparing" (see the auto-timer below, and
+    // adminController.updateOrderStatus for the manual-status-change path).
     io.emit("order-status-updated", order);
 
-    // Auto Preparing 3 minutes after acceptance (unchanged behavior, just
-    // now measured from acceptance instead of from placement).
+    // Auto Preparing 3 minutes after acceptance (unchanged timing/behavior —
+    // only what happens AT that transition changed: this is now also where
+    // the KOT print fires, via the same "new-order" event/payload shape
+    // restaurant-print-service has always listened for, so the print
+    // service itself needed no changes).
     setTimeout(async () => {
       try {
         const current = await Order.findById(order._id);
@@ -286,15 +289,7 @@ export const acceptOrder = async (req, res) => {
             { new: true }
           );
           console.log(`Order ${order._id} → Preparing`);
-          io.emit("kot-print", {
-            orderId:   preparing.orderId,
-            tableNo:   preparing.tableNo,
-            orderType: preparing.orderType,
-            items:     preparing.items,
-            status:    preparing.status,
-            createdAt: preparing.createdAt,
-            _id:       preparing._id,
-          });
+          io.emit("new-order", preparing); // triggers KOT print
           io.emit("order-status-updated", preparing);
         }
       } catch (err) {
