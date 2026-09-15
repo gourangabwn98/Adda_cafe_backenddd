@@ -209,8 +209,24 @@ export const updateOrderStatus = async (req, res) => {
     if (!Object.keys(update).length)
       return res.status(400).json({ message: "Nothing to update" });
 
+    // Read the pre-update status so a manual status change INTO "Preparing"
+    // (e.g. Admin/Waiter clicking the "Preparing" button) can also trigger
+    // the KOT print exactly once — mirrors the automatic path in
+    // orderController.acceptOrder's 3-minute timer. Skipped entirely when
+    // this call isn't changing `status` at all (a payment-only update).
+    const wasPreparingAlready =
+      update.status === "Preparing"
+        ? (await Order.findById(req.params.id).select("status"))?.status === "Preparing"
+        : null;
+
     const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!order) return res.status(404).json({ message: "Order not found" });
+
+    if (update.status === "Preparing" && !wasPreparingAlready) {
+      io.emit("new-order", order); // triggers KOT print — see orderController.acceptOrder
+      io.emit("order-status-updated", order);
+    }
+
     res.json(order);
   } catch (err) {
     res.status(500).json({ message: err.message });

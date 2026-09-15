@@ -1,8 +1,10 @@
 // const Chef = require("../models/Chef.js");
 // const User = require("../models/User.js"); // assuming you have admin user
 
+import mongoose from "mongoose";
 import { Chef } from "../models/Chef.js";
 import { User } from "../models/User.js";
+import { Order } from "../models/Order.js";
 
 // const { Chef } = require("../models/Chef.js");
 
@@ -77,6 +79,74 @@ export const updateChefStatus = async (req, res) => {
     });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/admin/chefs/revenue?chefId=<optional>&date=YYYY-MM-DD
+// Waiter-wise daily revenue: Cash vs Online, for orders actually collected
+// (paymentStatus "Paid") that a Chef/Waiter placed via the Waiter app
+// (Order.chefId — unset for Admin/Client orders, which are excluded here).
+// Defaults to today (server local time); pass `chefId` to scope to one
+// staff member (used by the Waiter app for its own "My Daily Revenue").
+export const getChefRevenue = async (req, res) => {
+  try {
+    const { chefId, date } = req.query;
+
+    const dayStart = date ? new Date(`${date}T00:00:00`) : new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+
+    const match = {
+      paymentStatus: "Paid",
+      chefId: { $ne: null },
+      createdAt: { $gte: dayStart, $lt: dayEnd },
+    };
+    if (chefId) {
+      if (!mongoose.Types.ObjectId.isValid(chefId))
+        return res.status(400).json({ success: false, message: "Invalid chefId" });
+      match.chefId = new mongoose.Types.ObjectId(chefId);
+    }
+
+    const rows = await Order.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: { chefId: "$chefId", paymentMethod: "$paymentMethod" },
+          amount: { $sum: "$total" },
+        },
+      },
+    ]);
+
+    const byChef = {};
+    for (const r of rows) {
+      const id = String(r._id.chefId);
+      if (!byChef[id]) byChef[id] = { chefId: id, cash: 0, online: 0 };
+      // Orders placed before paymentMethod existed (or any other legacy
+      // value) fall back into "cash" rather than being silently dropped.
+      const key = r._id.paymentMethod === "Online" ? "online" : "cash";
+      byChef[id][key] += r.amount;
+    }
+
+    const chefIds = Object.keys(byChef);
+    const chefDocs = chefIds.length
+      ? await Chef.find({ _id: { $in: chefIds } }).select("name").lean()
+      : [];
+    const nameById = Object.fromEntries(chefDocs.map((c) => [String(c._id), c.name]));
+
+    const chefsRevenue = Object.values(byChef)
+      .map((r) => ({
+        chefId: r.chefId,
+        name: nameById[r.chefId] || "Unknown",
+        cash: r.cash,
+        online: r.online,
+        total: r.cash + r.online,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    res.json({ success: true, date: dayStart.toISOString().slice(0, 10), chefs: chefsRevenue });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 

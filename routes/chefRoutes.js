@@ -4,6 +4,7 @@ import {
   deleteChef,
   getAllChefs,
   updateChefStatus,
+  getChefRevenue,
 } from "../controllers/chefController.js";
 import { protect } from "../middleware/authMiddleware.js";
 // import { protect } from "../middleware/authMiddleware.js";
@@ -22,6 +23,7 @@ const router = express.Router();
 // router.use(protect, adminOnly);
 
 router.get("/", getAllChefs);
+router.get("/revenue", protect, getChefRevenue);
 router.post("/",protect, createChef);
 router.patch("/:id/status",protect, updateChefStatus);
 router.delete("/:id",protect, deleteChef);
