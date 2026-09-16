@@ -134,8 +134,42 @@ import { isServiceChargeExempt } from "../utils/serviceCharge.js";
 const ALLOWED_PAYMENT_METHODS = ["Cash", "Online"];
 const ALLOWED_PAYMENT_STATUSES = ["Pending", "Paid", "Failed"];
 
+// Orders placed by staff themselves (Admin's Create Order modal, Waiter's
+// Cart) skip the customer-confirmation step entirely — only a Client
+// (customer) order needs Admin/Waiter to accept/decline it. Sent as
+// `orderSource` in the placeOrder payload; unrecognized/absent values are
+// treated as "client" (the safe default — an order only skips confirmation
+// if a caller explicitly identifies itself as staff).
+const ORDER_SOURCES_SKIP_CONFIRMATION = ["admin", "waiter"];
+
+// Auto-transitions an order from "Placed" to "Preparing" 3 minutes later,
+// which is also when the KOT-print trigger fires (see "new-order" handler
+// in restaurant-print-service/index.js). Shared between acceptOrder (client
+// orders, once staff accept) and placeOrder (admin/Waiter orders, which
+// start directly at "Placed" — see ORDER_SOURCES_SKIP_CONFIRMATION above) so
+// both paths behave identically from this point on.
+const scheduleAutoPreparing = (orderId) => {
+  setTimeout(async () => {
+    try {
+      const current = await Order.findById(orderId);
+      if (current && current.status === "Placed") {
+        const preparing = await Order.findByIdAndUpdate(
+          orderId,
+          { status: "Preparing" },
+          { new: true }
+        );
+        console.log(`Order ${orderId} → Preparing`);
+        io.emit("new-order", preparing); // triggers KOT print
+        io.emit("order-status-updated", preparing);
+      }
+    } catch (err) {
+      console.error("Auto Preparing update failed:", err);
+    }
+  }, 3 * 60 * 1000);
+};
+
 export const placeOrder = async (req, res) => {
-  const { items, orderType, tableNo, orderId, isGuest, deliveryAddress, deliveryPhone, paymentMethod, paymentStatus, chefId, waiterName } = req.body;
+  const { items, orderType, tableNo, orderId, isGuest, deliveryAddress, deliveryPhone, paymentMethod, paymentStatus, chefId, waiterName, orderSource } = req.body;
 
   if (!items?.length)
     return res.status(400).json({ message: "No items in order" });
@@ -220,6 +254,9 @@ export const placeOrder = async (req, res) => {
 
     const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000);
 
+    const skipConfirmation = ORDER_SOURCES_SKIP_CONFIRMATION.includes(String(orderSource || "").toLowerCase());
+    const initialStatus = skipConfirmation ? "Placed" : "PendingConfirmation";
+
     const order = await Order.create({
       orderId: orderId || undefined,
       user: req.user ? req.user._id : null,
@@ -243,14 +280,24 @@ export const placeOrder = async (req, res) => {
         deliveryAddress: String(deliveryAddress).trim(),
         deliveryPhone: deliveryPhone ? String(deliveryPhone).trim() : undefined,
       }),
-      status: "PendingConfirmation",
+      status: initialStatus,
       cancelDeadline,
     });
 
-    // Notify admin/Waiter of a new request awaiting confirmation. This does
-    // NOT trigger KOT printing — printing starts only once staff accept the
-    // order (see acceptOrder below), which is when "new-order" now fires.
-    io.emit("order-request", order);
+    if (skipConfirmation) {
+      // Admin/Waiter placed this themselves — no confirmation needed.
+      // Starts directly at "Placed", same as a client order right after
+      // staff accept it, including the same auto-Preparing timer (→ KOT
+      // print) so downstream behavior stays identical either way.
+      io.emit("order-status-updated", order);
+      scheduleAutoPreparing(order._id);
+    } else {
+      // Notify admin/Waiter of a new request awaiting confirmation. This
+      // does NOT trigger KOT printing — printing starts only once staff
+      // accept the order (see acceptOrder below), which is when
+      // "new-order" now fires.
+      io.emit("order-request", order);
+    }
 
     res.status(201).json(order);
 
@@ -274,32 +321,10 @@ export const acceptOrder = async (req, res) => {
     await order.save();
 
     // KOT printing no longer happens here — it now fires when the order
-    // actually reaches "Preparing" (see the auto-timer below, and
+    // actually reaches "Preparing" (see scheduleAutoPreparing above, and
     // adminController.updateOrderStatus for the manual-status-change path).
     io.emit("order-status-updated", order);
-
-    // Auto Preparing 3 minutes after acceptance (unchanged timing/behavior —
-    // only what happens AT that transition changed: this is now also where
-    // the KOT print fires, via the same "new-order" event/payload shape
-    // restaurant-print-service has always listened for, so the print
-    // service itself needed no changes).
-    setTimeout(async () => {
-      try {
-        const current = await Order.findById(order._id);
-        if (current && current.status === "Placed") {
-          const preparing = await Order.findByIdAndUpdate(
-            order._id,
-            { status: "Preparing" },
-            { new: true }
-          );
-          console.log(`Order ${order._id} → Preparing`);
-          io.emit("new-order", preparing); // triggers KOT print
-          io.emit("order-status-updated", preparing);
-        }
-      } catch (err) {
-        console.error("Auto Preparing update failed:", err);
-      }
-    }, 3 * 60 * 1000);
+    scheduleAutoPreparing(order._id);
 
     res.json(order);
   } catch (err) {
