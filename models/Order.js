@@ -1,5 +1,6 @@
 // ─── models/Order.js ──────────────────────────────────────────────────────────
 import mongoose from "mongoose";
+import { Counter } from "./Counter.js";
 const orderItemSchema = new mongoose.Schema({
   menuItem: {
     type: mongoose.Schema.Types.ObjectId,
@@ -101,11 +102,21 @@ const orderSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// Auto-generate orderId before save
+// Auto-generate orderId before save — atomic counter (see models/Counter.js).
+// Previously counted existing documents (Order.countDocuments()), which
+// broke as soon as any order was ever deleted: the live count could drop
+// below a number already in use by a surviving order, producing
+// "E11000 duplicate key ... orderId_1" on the next order placed. $inc is
+// atomic, so it also can't collide under concurrent order placement
+// (Admin/Waiter/Client all creating orders at once), unlike the old approach.
 orderSchema.pre("save", async function () {
   if (!this.orderId) {
-    const count = await mongoose.model("Order").countDocuments();
-    this.orderId = `ADDA${String(count + 1).padStart(5, "0")}`;
+    const counter = await Counter.findByIdAndUpdate(
+      "orderId",
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    this.orderId = `ADDA${String(counter.seq).padStart(5, "0")}`;
   }
   // next();
 });
