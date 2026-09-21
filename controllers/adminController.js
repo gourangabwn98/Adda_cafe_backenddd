@@ -618,42 +618,44 @@ export const updateInvoiceStatus = async (req, res) => {
     const { id }     = req.params;
     const { status,printerName  } = req.body;
 
-    // Update status first
-    await Invoice.findByIdAndUpdate(id, {
-      status,
-      paymentStatus: status === "completed" ? "Paid" : "Pending",
-    });
-
-    // Re-fetch fresh so items, tableNo, subtotal etc. are all guaranteed present
-    const invoice = await Invoice.findById(id).lean();
+    // Update and read back the result in one round trip instead of an
+    // update followed by a separate findById to re-fetch the same document.
+    const invoice = await Invoice.findByIdAndUpdate(
+      id,
+      { status, paymentStatus: status === "completed" ? "Paid" : "Pending" },
+      { new: true },
+    ).lean();
 
     if (!invoice)
       return res.status(404).json({ message: "Invoice not found" });
 
     if (status === "completed") {
 
-      // Mark all linked orders as Completed
-      await Order.updateMany(
-        { _id: { $in: invoice.orders } },
-        { status: "Completed", paymentStatus: "Paid" }
-      );
-
-      // paymentMethod isn't touched by the updateMany above (only status/
-      // paymentStatus are) — read it back from the linked orders so the
-      // printed bill shows what the customer actually chose. Usually all
-      // one table's orders share a method; joined as a fallback if they
-      // ever differ (mirrors the same pattern used in Waiter's TablesPage
-      // merged-bill display).
-      const linkedOrders = await Order.find({ _id: { $in: invoice.orders } }).select("paymentMethod").lean();
+      // Mark all linked orders as Completed, re-read their paymentMethod
+      // (unaffected by the updateMany, but needed for the bill), and fetch
+      // restaurant info for the bill heading — three independent operations
+      // run in parallel instead of three sequential round trips.
+      const [, linkedOrders, profile] = await Promise.all([
+        Order.updateMany(
+          { _id: { $in: invoice.orders } },
+          { status: "Completed", paymentStatus: "Paid" }
+        ),
+        // paymentMethod isn't touched by the updateMany above (only status/
+        // paymentStatus are) — read it back from the linked orders so the
+        // printed bill shows what the customer actually chose. Usually all
+        // one table's orders share a method; joined as a fallback if they
+        // ever differ (mirrors the same pattern used in Waiter's TablesPage
+        // merged-bill display).
+        Order.find({ _id: { $in: invoice.orders } }).select("paymentMethod").lean(),
+        // Restaurant info for the printed bill heading (Admin → Profile →
+        // Restaurant Logo/name/address/phone) — read fresh right here so a
+        // logo/address change takes effect on the very next bill printed,
+        // with no caching or print-service restart involved. Same singleton
+        // sort used everywhere else this profile is read (profileController.js).
+        RestaurantProfile.findOne().sort({ createdAt: 1 }).lean(),
+      ]);
       const billPaymentMethod =
         [...new Set(linkedOrders.map((o) => o.paymentMethod).filter(Boolean))].join(", ") || "Cash";
-
-      // Restaurant info for the printed bill heading (Admin → Profile →
-      // Restaurant Logo/name/address/phone) — read fresh right here so a
-      // logo/address change takes effect on the very next bill printed,
-      // with no caching or print-service restart involved. Same singleton
-      // sort used everywhere else this profile is read (profileController.js).
-      const profile = await RestaurantProfile.findOne().sort({ createdAt: 1 }).lean();
 
       // Build payload for thermal printer
       const billPayload = {
