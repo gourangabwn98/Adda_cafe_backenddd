@@ -5,6 +5,7 @@ import {
   getMyOrders,
   getOrderById,
   cancelOrder,
+  updateOrderItems,
   updatePayment,
   rateOrder,
   changeOrderType,
@@ -21,6 +22,7 @@ router.get("/:id", protect, getOrderById);
 router.get("/by-order-id/:orderId", getOrderByOrderId);
 router.patch("/change-type/:orderId", changeOrderType);
 router.put("/:id/cancel", protect, cancelOrder);
+router.put("/:id/items", protect, updateOrderItems);
 router.put("/:id/pay", protect, updatePayment);
 router.put("/:id/rate", protect, rateOrder);
 // Admin/Waiter confirm or decline a PendingConfirmation order request.
