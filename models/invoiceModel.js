@@ -86,4 +86,8 @@ const invoiceSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// getAllInvoices sorts by createdAt desc with no filter — same reasoning as
+// Order.createdAt above.
+invoiceSchema.index({ createdAt: -1 });
+
 export default mongoose.model("Invoice", invoiceSchema);

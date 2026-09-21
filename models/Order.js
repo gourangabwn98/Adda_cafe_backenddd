@@ -121,4 +121,13 @@ orderSchema.pre("save", async function () {
   // next();
 });
 
+// Every admin list endpoint (getAllOrders, dashboard, table map) sorts by
+// createdAt desc with no other filter — without this index Mongo has to
+// collection-scan + in-memory sort on every request, and it gets slower as
+// order history grows.
+orderSchema.index({ createdAt: -1 });
+// getOrdersSummary/getDashboardStats filter/group by status frequently
+// (pending-orders count, per-status chip counts, PendingConfirmation queue).
+orderSchema.index({ status: 1 });
+
 export const Order = mongoose.model("Order", orderSchema);

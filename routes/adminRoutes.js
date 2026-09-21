@@ -4,6 +4,7 @@ import { protect } from "../middleware/authMiddleware.js";
 import {
   getDashboardStats,
   getAllOrders,
+  getOrdersSummary,
   updateOrderStatus,
   getAllUsers,
   deleteUser,
@@ -17,6 +18,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get("/dashboard", getDashboardStats);
+router.get("/orders/summary", getOrdersSummary);
 router.get("/orders", getAllOrders);
 router.get("/invoices/all", getAllInvoices);
 router.get("/users", getAllUsers);
