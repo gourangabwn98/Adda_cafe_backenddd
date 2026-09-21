@@ -135,19 +135,21 @@ const ALLOWED_PAYMENT_METHODS = ["Cash", "Online"];
 const ALLOWED_PAYMENT_STATUSES = ["Pending", "Paid", "Failed"];
 
 // Orders placed by staff themselves (Admin's Create Order modal, Waiter's
-// Cart) skip the customer-confirmation step entirely — only a Client
-// (customer) order needs Admin/Waiter to accept/decline it. Sent as
-// `orderSource` in the placeOrder payload; unrecognized/absent values are
-// treated as "client" (the safe default — an order only skips confirmation
-// if a caller explicitly identifies itself as staff).
+// Cart) skip the customer-confirmation step entirely and start straight at
+// "Preparing" (see initialStatus below) — only a Client (customer) order
+// needs Admin/Waiter to accept/decline it first, starting at
+// "PendingConfirmation". Sent as `orderSource` in the placeOrder payload;
+// unrecognized/absent values are treated as "client" (the safe default — an
+// order only skips confirmation if a caller explicitly identifies itself as
+// staff).
 const ORDER_SOURCES_SKIP_CONFIRMATION = ["admin", "waiter"];
 
-// Auto-transitions an order from "Placed" to "Preparing" 3 minutes later,
-// which is also when the KOT-print trigger fires (see "new-order" handler
-// in restaurant-print-service/index.js). Shared between acceptOrder (client
-// orders, once staff accept) and placeOrder (admin/Waiter orders, which
-// start directly at "Placed" — see ORDER_SOURCES_SKIP_CONFIRMATION above) so
-// both paths behave identically from this point on.
+// Auto-transitions a client order from "Placed" to "Preparing" 3 minutes
+// after staff accept it, which is also when the KOT-print trigger fires (see
+// "new-order" handler in restaurant-print-service/index.js). Only used by
+// acceptOrder now — Admin/Waiter orders (see ORDER_SOURCES_SKIP_CONFIRMATION
+// above) start directly at "Preparing" and print their KOT immediately
+// instead of going through this delay.
 const scheduleAutoPreparing = (orderId) => {
   setTimeout(async () => {
     try {
@@ -260,7 +262,7 @@ export const placeOrder = async (req, res) => {
     const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000);
 
     const skipConfirmation = ORDER_SOURCES_SKIP_CONFIRMATION.includes(String(orderSource || "").toLowerCase());
-    const initialStatus = skipConfirmation ? "Placed" : "PendingConfirmation";
+    const initialStatus = skipConfirmation ? "Preparing" : "PendingConfirmation";
 
     const order = await Order.create({
       orderId: orderId || undefined,
@@ -290,12 +292,12 @@ export const placeOrder = async (req, res) => {
     });
 
     if (skipConfirmation) {
-      // Admin/Waiter placed this themselves — no confirmation needed.
-      // Starts directly at "Placed", same as a client order right after
-      // staff accept it, including the same auto-Preparing timer (→ KOT
-      // print) so downstream behavior stays identical either way.
+      // Admin/Waiter placed this themselves — no confirmation needed and no
+      // "Placed" holding step either. Starts directly at "Preparing", so the
+      // KOT prints immediately instead of after the client-order 3-minute
+      // delay (see scheduleAutoPreparing above).
+      io.emit("new-order", order); // triggers KOT print
       io.emit("order-status-updated", order);
-      scheduleAutoPreparing(order._id);
     } else {
       // Notify admin/Waiter of a new request awaiting confirmation. This
       // does NOT trigger KOT printing — printing starts only once staff
