@@ -21,7 +21,13 @@ export const generateInvoice = async (req, res) => {
 
 // GET /api/admin/dashboard
 export const getDashboardStats = async (req, res) => {
+  // TEMPORARY — remove once you've captured before/after numbers in your
+  // Render logs. Measures only this handler's own DB + serialization work.
+  console.time("[perf] getDashboardStats");
   try {
+    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
+    const endOfToday = new Date(new Date().setHours(23, 59, 59, 999));
+
     const [
       totalUsers,
       totalItems,
@@ -33,6 +39,14 @@ export const getDashboardStats = async (req, res) => {
       recentOrders,
       topItems,
       weeklyRevenue,
+      // Completed + Paid revenue — the definition the admin dashboard's
+      // "Total revenue" / "Today's revenue" cards actually use (see
+      // DashboardPage.jsx completedPaidAll/completedPaidToday). Added
+      // alongside the existing paymentStatus-only revenueAgg/todayOrdersAgg
+      // (still used by AnalyticsPage) rather than changing their $match, so
+      // AnalyticsPage's displayed numbers don't shift.
+      completedRevenueAgg,
+      completedTodayAgg,
     ] = await Promise.all([
       User.countDocuments(),
       MenuItem.countDocuments({ isAvailable: true }),
@@ -49,10 +63,7 @@ export const getDashboardStats = async (req, res) => {
       Order.aggregate([
         {
           $match: {
-            createdAt: {
-              $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-              $lte: new Date(new Date().setHours(23, 59, 59, 999)),
-            },
+            createdAt: { $gte: startOfToday, $lte: endOfToday },
           },
         },
         {
@@ -113,25 +124,23 @@ export const getDashboardStats = async (req, res) => {
         },
         { $sort: { _id: 1 } },
       ]),
-    ]);
 
-    // Build table-status map  {Placed:[], Preparing:[], ...}
-    const TABLE_STATUSES = [
-      "Placed",
-      "Preparing",
-      "Ready",
-      "Completed",
-      "Cancelled",
-      "All",
-    ];
-    const tableOrders = {};
-    for (const s of TABLE_STATUSES) {
-      tableOrders[s] = await Order.find(s === "All" ? {} : { status: s })
-        .sort({ createdAt: -1 })
-        .limit(20)
-        .populate("user", "name phone")
-        .lean();
-    }
+      Order.aggregate([
+        { $match: { status: "Completed", paymentStatus: "Paid" } },
+        { $group: { _id: null, total: { $sum: "$total" } } },
+      ]),
+
+      Order.aggregate([
+        {
+          $match: {
+            status: "Completed",
+            paymentStatus: "Paid",
+            createdAt: { $gte: startOfToday, $lte: endOfToday },
+          },
+        },
+        { $group: { _id: null, total: { $sum: "$total" }, count: { $sum: 1 } } },
+      ]),
+    ]);
 
     res.json({
       stats: {
@@ -142,26 +151,49 @@ export const getDashboardStats = async (req, res) => {
         totalRevenue: revenueAgg[0]?.total || 0,
         todayOrders: todayOrdersAgg[0]?.count || 0,
         todayRevenue: todayOrdersAgg[0]?.revenue || 0,
+        completedRevenue: completedRevenueAgg[0]?.total || 0,
+        completedTodayRevenue: completedTodayAgg[0]?.total || 0,
+        completedTodayCount: completedTodayAgg[0]?.count || 0,
       },
       ordersByStatus,
       recentOrders,
       topItems,
       weeklyRevenue,
-      tableOrders,
     });
+    console.timeEnd("[perf] getDashboardStats"); // TEMPORARY
   } catch (err) {
+    console.timeEnd("[perf] getDashboardStats"); // TEMPORARY
     console.error(err);
     res.status(500).json({ message: "Dashboard error" });
   }
 };
 
 // GET /api/admin/orders  (all orders, paginated)
+// Shared by getAllOrders/getOrdersSummary — builds the same Mongo filter
+// from the same set of optional query params so the paginated list and its
+// stat pills always agree on what "matches the current filters" means.
+// `startDate`/`endDate` are "YYYY-MM-DD" (see OrdersPage.jsx date inputs).
+function buildOrderFilter({ status, orderType, paymentStatus, search, startDate, endDate }) {
+  const filter = {};
+  if (status && status !== "All") filter.status = status;
+  if (orderType && orderType !== "All") filter.orderType = orderType;
+  if (paymentStatus && paymentStatus !== "All") filter.paymentStatus = paymentStatus;
+  if (search) filter.orderId = { $regex: search, $options: "i" };
+  if (startDate || endDate) {
+    filter.createdAt = {};
+    if (startDate) filter.createdAt.$gte = new Date(`${startDate}T00:00:00.000Z`);
+    if (endDate) filter.createdAt.$lte = new Date(`${endDate}T23:59:59.999Z`);
+  }
+  return filter;
+}
+
 export const getAllOrders = async (req, res) => {
+  // TEMPORARY — remove once you've captured before/after numbers.
+  const label = `[perf] getAllOrders limit=${req.query.limit || 20}`;
+  console.time(label);
   try {
-    const { page = 1, limit = 20, status, search } = req.query;
-    const filter = {};
-    if (status && status !== "All") filter.status = status;
-    if (search) filter.orderId = { $regex: search, $options: "i" };
+    const { page = 1, limit = 20, status, orderType, paymentStatus, search, startDate, endDate } = req.query;
+    const filter = buildOrderFilter({ status, orderType, paymentStatus, search, startDate, endDate });
 
     const [orders, total] = await Promise.all([
       Order.find(filter)
@@ -171,11 +203,77 @@ export const getAllOrders = async (req, res) => {
         .populate("user", "name phone"),
       Order.countDocuments(filter),
     ]);
-    res.json({
+    const payload = {
       orders,
       total,
       page: Number(page),
       pages: Math.ceil(total / limit),
+    };
+    res.json(payload);
+    console.timeEnd(label); // TEMPORARY
+    console.log(`[perf] getAllOrders payload ≈ ${(JSON.stringify(payload).length / 1024).toFixed(1)} KB, ${orders.length} orders`); // TEMPORARY
+  } catch (err) {
+    console.timeEnd(label); // TEMPORARY
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/admin/orders/summary
+// Aggregation-only counterpart to getAllOrders — the Orders page's stat
+// pills (Total/Today/Collected/Active), per-status filter-chip counts, and
+// the date-range pill previously came from summing the entire fetched order
+// list in the browser (see OrdersPage.jsx `stats`/`rangeStats`, pre-fix).
+// This computes the same numbers in the database instead, so the page no
+// longer needs to download every order just to show a few totals.
+export const getOrdersSummary = async (req, res) => {
+  try {
+    const { orderType, search, startDate, endDate } = req.query;
+    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
+    const endOfToday = new Date(new Date().setHours(23, 59, 59, 999));
+
+    // Date-range pill: Completed + Paid orders in [startDate, endDate],
+    // still respecting the Type/search filters (Status/Payment dropdowns are
+    // intentionally not applied here — they'd contradict the hardcoded
+    // Completed+Paid requirement and always zero the pill out).
+    const rangeFilter = buildOrderFilter({ orderType, search, startDate, endDate });
+    rangeFilter.status = "Completed";
+    rangeFilter.paymentStatus = "Paid";
+
+    const [
+      total,
+      today,
+      revenueAgg,
+      pending,
+      byStatusAgg,
+      rangeCount,
+      rangeAmountAgg,
+    ] = await Promise.all([
+      Order.countDocuments({}),
+      Order.countDocuments({ createdAt: { $gte: startOfToday, $lte: endOfToday } }),
+      Order.aggregate([
+        { $match: { status: "Completed", paymentStatus: "Paid" } },
+        { $group: { _id: null, total: { $sum: "$total" } } },
+      ]),
+      Order.countDocuments({ status: { $in: ["Placed", "Preparing", "Ready"] } }),
+      Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+      Order.countDocuments(rangeFilter),
+      Order.aggregate([
+        { $match: rangeFilter },
+        { $group: { _id: null, total: { $sum: "$total" } } },
+      ]),
+    ]);
+
+    const byStatus = {};
+    byStatusAgg.forEach((s) => { byStatus[s._id] = s.count; });
+
+    res.json({
+      total,
+      today,
+      revenue: revenueAgg[0]?.total || 0,
+      pending,
+      byStatus,
+      rangeCount,
+      rangeAmount: rangeAmountAgg[0]?.total || 0,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -269,7 +367,20 @@ export const getAllInvoices = async (req, res) => {
       req.user?._id || "unauthenticated",
     );
 
-    const invoices = await Invoice.find()
+    // Optional date-range filter — additive: no startDate/endDate means
+    // "everything", same as before, so existing callers (InvoicesPage,
+    // which needs full history) are unaffected. Dashboard/table-status
+    // views only need today's invoices to match against active tables, so
+    // they can now ask for just that instead of the entire collection.
+    const { startDate, endDate } = req.query;
+    const filter = {};
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(`${startDate}T00:00:00.000Z`);
+      if (endDate) filter.createdAt.$lte = new Date(`${endDate}T23:59:59.999Z`);
+    }
+
+    const invoices = await Invoice.find(filter)
       .sort({ createdAt: -1 }) // newest first
       .populate("user", "name phone email") // populate user fields (add more if needed)
       .lean(); // faster response (optional but good)
