@@ -664,6 +664,10 @@ export const updateInvoiceStatus = async (req, res) => {
         subtotal:  invoice.subtotal,
         tax:       invoice.tax,
         serviceCharge: invoice.serviceCharge || 0,
+        // Rate this invoice's serviceCharge amount was actually computed
+        // at (RestaurantProfile.serviceCharge is a flat per-item amount,
+        // not a percentage) — printed alongside the amount on the bill.
+        serviceChargeRate: profile?.serviceCharge || 0,
         total:     invoice.total,
         waiterName: "",
         cafeName:  "ADDA CAFE",

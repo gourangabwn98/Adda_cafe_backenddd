@@ -149,6 +149,11 @@ const { status, printerName } = req.body;
         { status: "Completed", paymentStatus: "Paid" }
       );
 
+      // Rate this invoice's serviceCharge amount was actually computed at
+      // (a flat per-item amount, not a percentage) — printed alongside the
+      // amount on the bill, same field GST_RATE already mirrors elsewhere.
+      const profile = await RestaurantProfile.findOne().sort({ createdAt: 1 }).select("serviceCharge").lean();
+
       // Build payload for thermal printer
       // const billPayload = {
       //   type:      "BILL",
@@ -171,6 +176,7 @@ const billPayload = {
   subtotal:  invoice.subtotal,
   tax:       invoice.tax,
   serviceCharge: invoice.serviceCharge || 0,
+  serviceChargeRate: profile?.serviceCharge || 0,
   total:     invoice.total,
   waiterName: "",
   cafeName:  "ADDA CAFE",
