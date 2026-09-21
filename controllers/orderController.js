@@ -170,6 +170,56 @@ const scheduleAutoPreparing = (orderId) => {
   }, 3 * 60 * 1000);
 };
 
+// Verifies cart items against the DB and computes subtotal/tax/service
+// charge/delivery fee/total the same way for every caller that needs it —
+// placeOrder (new order) and updateOrderItems (customer modifying a
+// still-"Placed" order both need identical, non-duplicated pricing logic so
+// the two can never silently diverge.
+const computeOrderPricing = async (items, type) => {
+  const menuItemIds = items.map((i) => i.menuItemId);
+  const [menuDocs, restaurant] = await Promise.all([
+    MenuItem.find({ _id: { $in: menuItemIds } }),
+    // Sorted so this always agrees with profileController's singleton pick
+    // (see SINGLETON_SORT comment there) if more than one profile doc exists.
+    RestaurantProfile.findOne().sort({ createdAt: 1 }),
+  ]);
+  const menuById = new Map(menuDocs.map((m) => [String(m._id), m]));
+
+  const dbItems = items.map((i) => {
+    const m = menuById.get(String(i.menuItemId));
+    if (!m) throw new Error(`Item not found. Please refresh the menu.`);
+    if (!m.isAvailable) throw new Error(`"${m.name}" is currently not available`);
+    return {
+      menuItem: m._id, name: m.name, price: m.price, qty: i.qty, category: m.category,
+      notes: i.notes ? String(i.notes).trim().slice(0, 200) : undefined,
+    };
+  });
+  const gstRate       = (restaurant?.gstRate || 0) / 100;
+  const serviceCharge = restaurant?.serviceCharge || 0; // flat per-item charge
+
+  const subtotal = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
+  const tax      = Math.round(subtotal * gstRate);
+
+  // ── Service charge: serviceCharge × chargeable quantity ───────────────
+  // Parcel / Water / Gas items are exempt (see utils/serviceCharge.js).
+  // e.g. 5 chargeable items ordered × ₹4 = ₹20
+  const totalQty         = dbItems
+    .filter((i) => !isServiceChargeExempt(i.category))
+    .reduce((s, i) => s + i.qty, 0);
+  const serviceChargeAmt = serviceCharge * totalQty;
+
+  // ── Delivery fee: flat RestaurantProfile.deliveryBaseFee, waived at/above
+  // freeDeliveryAbove. Only applies to Delivery orders.
+  const freeDeliveryAbove = restaurant?.freeDeliveryAbove || 0;
+  const deliveryFee = type === "Delivery"
+    ? (freeDeliveryAbove > 0 && subtotal >= freeDeliveryAbove ? 0 : (restaurant?.deliveryBaseFee || 0))
+    : 0;
+
+  const total = subtotal + tax + serviceChargeAmt + deliveryFee;
+
+  return { dbItems, subtotal, tax, serviceChargeAmt, deliveryFee, total, restaurant };
+};
+
 export const placeOrder = async (req, res) => {
   const { items, orderType, tableNo, orderId, isGuest, deliveryAddress, deliveryPhone, paymentMethod, paymentStatus, chefId, waiterName, orderSource } = req.body;
 
@@ -205,31 +255,8 @@ export const placeOrder = async (req, res) => {
   }
 
   try {
-    // One batched MenuItem lookup instead of one findById() per cart item
-    // (was N sequential-ish round trips for an N-item order), run in
-    // parallel with the independent restaurant-settings fetch.
-    const menuItemIds = items.map((i) => i.menuItemId);
-    const [menuDocs, restaurant] = await Promise.all([
-      MenuItem.find({ _id: { $in: menuItemIds } }),
-      // Sorted so this always agrees with profileController's singleton pick
-      // (see SINGLETON_SORT comment there) if more than one profile doc exists.
-      RestaurantProfile.findOne().sort({ createdAt: 1 }),
-    ]);
-    const menuById = new Map(menuDocs.map((m) => [String(m._id), m]));
-
-    const dbItems = items.map((i) => {
-      const m = menuById.get(String(i.menuItemId));
-      if (!m) throw new Error(`Item not found. Please refresh the menu.`);
-      if (!m.isAvailable) throw new Error(`"${m.name}" is currently not available`);
-      return {
-        menuItem: m._id, name: m.name, price: m.price, qty: i.qty, category: m.category,
-        notes: i.notes ? String(i.notes).trim().slice(0, 200) : undefined,
-      };
-    });
-    const gstRate         = (restaurant?.gstRate || 0) / 100;
-    const serviceCharge   = restaurant?.serviceCharge || 0; // flat per-item charge
-
-    const subtotal = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
+    const { dbItems, subtotal, tax, serviceChargeAmt, deliveryFee, total, restaurant } =
+      await computeOrderPricing(items, type);
 
     if (type === "Delivery") {
       if (restaurant?.services?.delivery === false)
@@ -238,26 +265,6 @@ export const placeOrder = async (req, res) => {
       if (minOrder > 0 && subtotal < minOrder)
         return res.status(400).json({ message: `Minimum order for delivery is ₹${minOrder}` });
     }
-
-    const tax      = Math.round(subtotal * gstRate);
-
-    // ── Service charge: serviceCharge × chargeable quantity ───────────────
-    // Parcel / Water / Gas items are exempt (see utils/serviceCharge.js).
-    // e.g. 5 chargeable items ordered × ₹4 = ₹20
-    const totalQty         = dbItems
-      .filter((i) => !isServiceChargeExempt(i.category))
-      .reduce((s, i) => s + i.qty, 0);
-    const serviceChargeAmt = serviceCharge * totalQty;
-
-    // ── Delivery fee: flat RestaurantProfile.deliveryBaseFee, waived at/above
-    // freeDeliveryAbove. Only applies to Delivery orders.
-    const freeDeliveryAbove = restaurant?.freeDeliveryAbove || 0;
-    const deliveryFee = type === "Delivery"
-      ? (freeDeliveryAbove > 0 && subtotal >= freeDeliveryAbove ? 0 : (restaurant?.deliveryBaseFee || 0))
-      : 0;
-
-    // const discount = subtotal > 400 ? 10 : 0;
-    const total    = subtotal + tax + serviceChargeAmt + deliveryFee;
 
     const cancelDeadline = new Date(Date.now() + 3 * 60 * 1000);
 
@@ -325,6 +332,13 @@ export const acceptOrder = async (req, res) => {
       return res.status(400).json({ message: `Order is already ${order.status}` });
 
     order.status = "Placed";
+    // Re-anchor the 3-minute window to THIS moment, not order-creation time —
+    // it was originally set in placeOrder, which can be an arbitrary amount
+    // of time before staff actually accept. Customers see this deadline as
+    // their "modify/cancel this order" countdown (see updateOrderItems /
+    // cancelOrder below), so it must line up with scheduleAutoPreparing's
+    // timer, started right below on the same instant.
+    order.cancelDeadline = new Date(Date.now() + 3 * 60 * 1000);
     await order.save();
 
     // KOT printing no longer happens here — it now fires when the order
@@ -437,6 +451,50 @@ export const cancelOrder = async (req, res) => {
   await order.save();
   io.emit("order-status-updated", order);
   res.json({ message: "Order cancelled", order });
+};
+
+// PUT /api/orders/:id/items — customer adds/removes items or changes
+// quantities on their own order while it's "Placed" and still inside the
+// same 3-minute window as cancelOrder above (see acceptOrder, which anchors
+// cancelDeadline to the moment the order became "Placed"). Once the order
+// moves to "Preparing" (or the deadline passes) this is rejected, matching
+// "Disable all customer modifications" once the window expires.
+export const updateOrderItems = async (req, res) => {
+  const { items } = req.body;
+  if (!items?.length)
+    return res.status(400).json({ message: "No items in order" });
+
+  const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+  if (!order) return res.status(404).json({ message: "Order not found" });
+  if (order.status !== "Placed")
+    return res.status(400).json({ message: "This order can no longer be modified" });
+  if (!order.cancelDeadline || new Date() > order.cancelDeadline)
+    return res.status(400).json({ message: "Modify window expired" });
+
+  try {
+    const { dbItems, subtotal, tax, serviceChargeAmt, deliveryFee, total, restaurant } =
+      await computeOrderPricing(items, order.orderType);
+
+    if (order.orderType === "Delivery") {
+      const minOrder = restaurant?.minOrderAmount || 0;
+      if (minOrder > 0 && subtotal < minOrder)
+        return res.status(400).json({ message: `Minimum order for delivery is ₹${minOrder}` });
+    }
+
+    order.items = dbItems;
+    order.subtotal = subtotal;
+    order.tax = tax;
+    order.serviceCharge = serviceChargeAmt;
+    order.deliveryFee = deliveryFee;
+    order.total = total;
+    await order.save();
+
+    io.emit("order-status-updated", order);
+    res.json(order);
+  } catch (err) {
+    console.error("updateOrderItems error:", err.message);
+    res.status(400).json({ message: err.message });
+  }
 };
 
 // PUT /api/orders/:id/pay
