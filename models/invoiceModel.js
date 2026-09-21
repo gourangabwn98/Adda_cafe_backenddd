@@ -89,5 +89,7 @@ const invoiceSchema = new mongoose.Schema(
 // getAllInvoices sorts by createdAt desc with no filter — same reasoning as
 // Order.createdAt above.
 invoiceSchema.index({ createdAt: -1 });
+// TablesPage looks up invoices by their linked order ids (orderIds param).
+invoiceSchema.index({ orders: 1 });
 
 export default mongoose.model("Invoice", invoiceSchema);
