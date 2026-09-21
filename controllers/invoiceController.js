@@ -19,12 +19,20 @@ export const generateInvoice = async (req, res) => {
       0,
     );
 
-     // ✅ FIXED — read from DB instead of hardcoded 0.18
+    // ✅ FIXED — read from DB instead of hardcoded 0.18
+    // Restaurant settings and the linked-orders lookup (used for service
+    // charge/delivery fee below) are independent — run in parallel instead
+    // of one after the other.
     // Sorted so this always agrees with profileController's singleton pick
     // (see SINGLETON_SORT comment there) if more than one profile doc exists.
-    const restaurant = await RestaurantProfile.findOne().sort({ createdAt: 1 });
-    const taxRate    = (restaurant?.gstRate || 0) / 100;
-    const tax     =Math.round(subtotal * taxRate);
+    const [restaurant, linkedOrders] = await Promise.all([
+      RestaurantProfile.findOne().sort({ createdAt: 1 }),
+      orders?.length
+        ? Order.find({ _id: { $in: orders } }).select("serviceCharge deliveryFee")
+        : Promise.resolve(null),
+    ]);
+    const taxRate = (restaurant?.gstRate || 0) / 100;
+    const tax     = Math.round(subtotal * taxRate);
 
     // Service charge: prefer summing the amount already computed & stored on
     // each linked Order at placement time (which already applies the
@@ -36,8 +44,7 @@ export const generateInvoice = async (req, res) => {
     // — stays correct if a Delivery order is ever included in an invoice.
     let serviceCharge;
     let deliveryFee = 0;
-    if (orders?.length) {
-      const linkedOrders = await Order.find({ _id: { $in: orders } }).select("serviceCharge deliveryFee");
+    if (linkedOrders) {
       serviceCharge = linkedOrders.reduce((sum, o) => sum + (o.serviceCharge || 0), 0);
       deliveryFee   = linkedOrders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0);
     } else {
@@ -129,30 +136,31 @@ export const updateInvoiceStatus = async (req, res) => {
     // AFTER — read printerName from frontend
 const { status, printerName } = req.body;
 
-    // Update status first
-    await Invoice.findByIdAndUpdate(id, {
-      status,
-      paymentStatus: status === "completed" ? "Paid" : "Pending",
-    });
-
-    // Re-fetch fresh so items, tableNo, subtotal etc. are all guaranteed present
-    const invoice = await Invoice.findById(id).lean();
+    // Update and read back the result in one round trip instead of an
+    // update followed by a separate findById to re-fetch the same document.
+    const invoice = await Invoice.findByIdAndUpdate(
+      id,
+      { status, paymentStatus: status === "completed" ? "Paid" : "Pending" },
+      { new: true },
+    ).lean();
 
     if (!invoice)
       return res.status(404).json({ message: "Invoice not found" });
 
     if (status === "completed") {
 
-      // Mark all linked orders as Completed
-      await Order.updateMany(
-        { _id: { $in: invoice.orders } },
-        { status: "Completed", paymentStatus: "Paid" }
-      );
-
-      // Rate this invoice's serviceCharge amount was actually computed at
-      // (a flat per-item amount, not a percentage) — printed alongside the
-      // amount on the bill, same field GST_RATE already mirrors elsewhere.
-      const profile = await RestaurantProfile.findOne().sort({ createdAt: 1 }).select("serviceCharge").lean();
+      // Mark all linked orders as Completed, and read the rate this
+      // invoice's serviceCharge amount was actually computed at (a flat
+      // per-item amount, not a percentage — printed alongside the amount
+      // on the bill) — independent of each other, so run in parallel
+      // instead of two sequential round trips.
+      const [, profile] = await Promise.all([
+        Order.updateMany(
+          { _id: { $in: invoice.orders } },
+          { status: "Completed", paymentStatus: "Paid" }
+        ),
+        RestaurantProfile.findOne().sort({ createdAt: 1 }).select("serviceCharge").lean(),
+      ]);
 
       // Build payload for thermal printer
       // const billPayload = {

@@ -203,22 +203,27 @@ export const placeOrder = async (req, res) => {
   }
 
   try {
-    const dbItems = await Promise.all(
-      items.map(async (i) => {
-        const m = await MenuItem.findById(i.menuItemId);
-        if (!m) throw new Error(`Item not found. Please refresh the menu.`);
-        if (!m.isAvailable) throw new Error(`"${m.name}" is currently not available`);
-        return {
-          menuItem: m._id, name: m.name, price: m.price, qty: i.qty, category: m.category,
-          notes: i.notes ? String(i.notes).trim().slice(0, 200) : undefined,
-        };
-      })
-    );
+    // One batched MenuItem lookup instead of one findById() per cart item
+    // (was N sequential-ish round trips for an N-item order), run in
+    // parallel with the independent restaurant-settings fetch.
+    const menuItemIds = items.map((i) => i.menuItemId);
+    const [menuDocs, restaurant] = await Promise.all([
+      MenuItem.find({ _id: { $in: menuItemIds } }),
+      // Sorted so this always agrees with profileController's singleton pick
+      // (see SINGLETON_SORT comment there) if more than one profile doc exists.
+      RestaurantProfile.findOne().sort({ createdAt: 1 }),
+    ]);
+    const menuById = new Map(menuDocs.map((m) => [String(m._id), m]));
 
-    // ── Fetch restaurant settings ─────────────────────────────────────────
-    // Sorted so this always agrees with profileController's singleton pick
-    // (see SINGLETON_SORT comment there) if more than one profile doc exists.
-    const restaurant = await RestaurantProfile.findOne().sort({ createdAt: 1 });
+    const dbItems = items.map((i) => {
+      const m = menuById.get(String(i.menuItemId));
+      if (!m) throw new Error(`Item not found. Please refresh the menu.`);
+      if (!m.isAvailable) throw new Error(`"${m.name}" is currently not available`);
+      return {
+        menuItem: m._id, name: m.name, price: m.price, qty: i.qty, category: m.category,
+        notes: i.notes ? String(i.notes).trim().slice(0, 200) : undefined,
+      };
+    });
     const gstRate         = (restaurant?.gstRate || 0) / 100;
     const serviceCharge   = restaurant?.serviceCharge || 0; // flat per-item charge
 
