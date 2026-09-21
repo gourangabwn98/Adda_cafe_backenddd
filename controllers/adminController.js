@@ -175,7 +175,14 @@ export const getDashboardStats = async (req, res) => {
 // `startDate`/`endDate` are "YYYY-MM-DD" (see OrdersPage.jsx date inputs).
 function buildOrderFilter({ status, orderType, paymentStatus, search, startDate, endDate }) {
   const filter = {};
-  if (status && status !== "All") filter.status = status;
+  if (status && status !== "All") {
+    // Comma-separated list ("Placed,Preparing,Ready,Delivered") → $in — used
+    // by TablesPage to ask for "active" orders directly instead of fetching
+    // everything and filtering out Completed/Cancelled/PendingConfirmation
+    // in the browser. A single value behaves exactly as before.
+    const statuses = String(status).split(",").map((s) => s.trim()).filter(Boolean);
+    filter.status = statuses.length > 1 ? { $in: statuses } : statuses[0];
+  }
   if (orderType && orderType !== "All") filter.orderType = orderType;
   if (paymentStatus && paymentStatus !== "All") filter.paymentStatus = paymentStatus;
   if (search) filter.orderId = { $regex: search, $options: "i" };
@@ -372,12 +379,21 @@ export const getAllInvoices = async (req, res) => {
     // which needs full history) are unaffected. Dashboard/table-status
     // views only need today's invoices to match against active tables, so
     // they can now ask for just that instead of the entire collection.
-    const { startDate, endDate } = req.query;
+    //
+    // orderIds (comma-separated Order _ids) — TablesPage only needs invoices
+    // tied to its small set of currently-active dining orders, regardless of
+    // date (an order can span past midnight), so it fetches by exact order
+    // id instead of a date window.
+    const { startDate, endDate, orderIds } = req.query;
     const filter = {};
     if (startDate || endDate) {
       filter.createdAt = {};
       if (startDate) filter.createdAt.$gte = new Date(`${startDate}T00:00:00.000Z`);
       if (endDate) filter.createdAt.$lte = new Date(`${endDate}T23:59:59.999Z`);
+    }
+    if (orderIds) {
+      const ids = String(orderIds).split(",").map((s) => s.trim()).filter(Boolean);
+      filter.orders = { $in: ids };
     }
 
     const invoices = await Invoice.find(filter)
