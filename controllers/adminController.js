@@ -173,7 +173,7 @@ export const getDashboardStats = async (req, res) => {
 // from the same set of optional query params so the paginated list and its
 // stat pills always agree on what "matches the current filters" means.
 // `startDate`/`endDate` are "YYYY-MM-DD" (see OrdersPage.jsx date inputs).
-function buildOrderFilter({ status, orderType, paymentStatus, search, startDate, endDate }) {
+async function buildOrderFilter({ status, orderType, paymentStatus, search, startDate, endDate }) {
   const filter = {};
   if (status && status !== "All") {
     // Comma-separated list ("Placed,Preparing,Ready,Delivered") → $in — used
@@ -185,11 +185,35 @@ function buildOrderFilter({ status, orderType, paymentStatus, search, startDate,
   }
   if (orderType && orderType !== "All") filter.orderType = orderType;
   if (paymentStatus && paymentStatus !== "All") filter.paymentStatus = paymentStatus;
-  if (search) filter.orderId = { $regex: search, $options: "i" };
+  if (search) {
+    // orderId lives on the order itself, but customer name/phone live on the
+    // referenced User doc — Mongo can't regex-match a populated ref field
+    // directly, so matching users have to be looked up first (see
+    // OrdersPage.jsx search placeholder: "Search order ID, customer or phone").
+    const matchingUsers = await User.find(
+      {
+        $or: [
+          { name: { $regex: search, $options: "i" } },
+          { phone: { $regex: search, $options: "i" } },
+        ],
+      },
+      "_id",
+    );
+    filter.$or = [
+      { orderId: { $regex: search, $options: "i" } },
+      { user: { $in: matchingUsers.map((u) => u._id) } },
+    ];
+  }
   if (startDate || endDate) {
+    // startDate/endDate are "YYYY-MM-DD" local calendar dates (e.g.
+    // DashboardPage.jsx todayStr(), OrdersPage.jsx date pickers) for this
+    // India-based restaurant — anchor to IST (UTC+05:30) midnight, not UTC
+    // midnight. Parsing as "...Z" shifted the whole window 5:30 forward, so
+    // "today" queries returned nothing until 5:30 AM IST (orders placed
+    // between local midnight and 5:30 AM fell into the previous UTC day).
     filter.createdAt = {};
-    if (startDate) filter.createdAt.$gte = new Date(`${startDate}T00:00:00.000Z`);
-    if (endDate) filter.createdAt.$lte = new Date(`${endDate}T23:59:59.999Z`);
+    if (startDate) filter.createdAt.$gte = new Date(`${startDate}T00:00:00.000+05:30`);
+    if (endDate) filter.createdAt.$lte = new Date(`${endDate}T23:59:59.999+05:30`);
   }
   return filter;
 }
@@ -200,7 +224,7 @@ export const getAllOrders = async (req, res) => {
   console.time(label);
   try {
     const { page = 1, limit = 20, status, orderType, paymentStatus, search, startDate, endDate } = req.query;
-    const filter = buildOrderFilter({ status, orderType, paymentStatus, search, startDate, endDate });
+    const filter = await buildOrderFilter({ status, orderType, paymentStatus, search, startDate, endDate });
 
     const [orders, total] = await Promise.all([
       Order.find(filter)
@@ -242,7 +266,7 @@ export const getOrdersSummary = async (req, res) => {
     // still respecting the Type/search filters (Status/Payment dropdowns are
     // intentionally not applied here — they'd contradict the hardcoded
     // Completed+Paid requirement and always zero the pill out).
-    const rangeFilter = buildOrderFilter({ orderType, search, startDate, endDate });
+    const rangeFilter = await buildOrderFilter({ orderType, search, startDate, endDate });
     rangeFilter.status = "Completed";
     rangeFilter.paymentStatus = "Paid";
 
@@ -387,9 +411,11 @@ export const getAllInvoices = async (req, res) => {
     const { startDate, endDate, orderIds } = req.query;
     const filter = {};
     if (startDate || endDate) {
+      // Same IST-anchoring fix as adminController.buildOrderFilter — these
+      // are local "YYYY-MM-DD" calendar dates, not UTC ones.
       filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(`${startDate}T00:00:00.000Z`);
-      if (endDate) filter.createdAt.$lte = new Date(`${endDate}T23:59:59.999Z`);
+      if (startDate) filter.createdAt.$gte = new Date(`${startDate}T00:00:00.000+05:30`);
+      if (endDate) filter.createdAt.$lte = new Date(`${endDate}T23:59:59.999+05:30`);
     }
     if (orderIds) {
       const ids = String(orderIds).split(",").map((s) => s.trim()).filter(Boolean);
