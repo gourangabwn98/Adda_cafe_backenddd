@@ -4,7 +4,7 @@ import  Invoice  from "../models/invoiceModel.js";
 import { Order }   from "../models/Order.js";
 import { RestaurantProfile } from "../models/restaurantProfile.js";
 import { io }      from "../server.js";
-import { isServiceChargeExempt } from "../utils/serviceCharge.js";
+import { isServiceChargeApplicable, getApplicableCategoryNames } from "../utils/serviceCharge.js";
 
 // ── Generate Invoice ──────────────────────────────────────────────────────────
 export const generateInvoice = async (req, res) => {
@@ -26,7 +26,7 @@ export const generateInvoice = async (req, res) => {
     // Sorted so this always agrees with profileController's singleton pick
     // (see SINGLETON_SORT comment there) if more than one profile doc exists.
     const [restaurant, linkedOrders] = await Promise.all([
-      RestaurantProfile.findOne().sort({ createdAt: 1 }),
+      RestaurantProfile.findOne().sort({ createdAt: 1 }).populate("serviceChargeCategories", "name"),
       orders?.length
         ? Order.find({ _id: { $in: orders } }).select("serviceCharge deliveryFee")
         : Promise.resolve(null),
@@ -36,10 +36,11 @@ export const generateInvoice = async (req, res) => {
 
     // Service charge: prefer summing the amount already computed & stored on
     // each linked Order at placement time (which already applies the
-    // Parcel/Water/Gas exemption — see utils/serviceCharge.js) so this stays
-    // in sync with orderController.placeOrder without recomputing rates.
-    // Falls back to a fresh calculation from the raw item list when no
-    // orders are linked (e.g. a direct item-only invoice).
+    // Admin-selected category allowlist — see utils/serviceCharge.js) so
+    // this stays in sync with orderController.placeOrder without
+    // recomputing rates. Falls back to a fresh calculation from the raw
+    // item list when no orders are linked (e.g. a direct item-only
+    // invoice).
     // Delivery fee, same "sum from linked Orders" approach as service charge
     // — stays correct if a Delivery order is ever included in an invoice.
     let serviceCharge;
@@ -48,8 +49,9 @@ export const generateInvoice = async (req, res) => {
       serviceCharge = linkedOrders.reduce((sum, o) => sum + (o.serviceCharge || 0), 0);
       deliveryFee   = linkedOrders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0);
     } else {
+      const applicableCategories = getApplicableCategoryNames(restaurant);
       const chargeableQty = safeItems
-        .filter((i) => !isServiceChargeExempt(i.category))
+        .filter((i) => isServiceChargeApplicable(i.category, applicableCategories))
         .reduce((sum, i) => sum + (i.qty || 0), 0);
       serviceCharge = (restaurant?.serviceCharge || 0) * chargeableQty;
     }
