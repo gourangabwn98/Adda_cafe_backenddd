@@ -502,6 +502,62 @@ export const updateOrderItems = async (req, res) => {
   }
 };
 
+// PUT /api/admin/orders/:id/items — Admin modifies an existing order's
+// items (add/remove/change qty). Unlike the customer path above, there's
+// no ownership check (Admin can act on any table's order) and no
+// cancelDeadline window — instead, Admin may modify any order whose
+// status is exactly "Placed" or "Preparing"; every other status is
+// rejected with 400. Route-level `requireAdmin` (see routes/adminRoutes.js)
+// enforces the caller is an actual Admin account, not just any logged-in
+// user — never rely on the frontend hiding the button.
+// Reuses computeOrderPricing — the exact same subtotal/tax/service-charge/
+// total calculation used by placeOrder and the customer's updateOrderItems
+// above — so Admin edits can never diverge from that single source of
+// truth (service charge in particular already reflects whatever
+// categories are currently selected in Admin → Profile → Pricing).
+const MODIFIABLE_STATUSES = ["Placed", "Preparing"];
+export const adminUpdateOrderItems = async (req, res) => {
+  const { items } = req.body;
+  if (!items?.length)
+    return res.status(400).json({ message: "No items in order" });
+
+  const order = await Order.findById(req.params.id);
+  if (!order) return res.status(404).json({ message: "Order not found" });
+  if (!MODIFIABLE_STATUSES.includes(order.status))
+    return res.status(400).json({
+      message: `Order cannot be modified while status is "${order.status}" — only Placed or Preparing orders can be modified`,
+    });
+
+  try {
+    const { dbItems, subtotal, tax, serviceChargeAmt, deliveryFee, total, restaurant } =
+      await computeOrderPricing(items, order.orderType);
+
+    if (order.orderType === "Delivery") {
+      const minOrder = restaurant?.minOrderAmount || 0;
+      if (minOrder > 0 && subtotal < minOrder)
+        return res.status(400).json({ message: `Minimum order for delivery is ₹${minOrder}` });
+    }
+
+    order.items = dbItems;
+    order.subtotal = subtotal;
+    order.tax = tax;
+    order.serviceCharge = serviceChargeAmt;
+    order.deliveryFee = deliveryFee;
+    order.total = total;
+    await order.save();
+
+    // Same event the customer-modification path already emits — every
+    // existing listener (Admin Dashboard, Waiter TablesPage/useOrderAlerts)
+    // picks this up unchanged; Kitchen/Customer apps don't use Socket.IO
+    // at all today (poll instead), so there's nothing new to wire there.
+    io.emit("order-status-updated", order);
+    res.json(order);
+  } catch (err) {
+    console.error("adminUpdateOrderItems error:", err.message);
+    res.status(400).json({ message: err.message });
+  }
+};
+
 // PUT /api/orders/:id/pay
 export const updatePayment = async (req, res) => {
   const order = await Order.findOne({ _id: req.params.id, user: req.user._id });

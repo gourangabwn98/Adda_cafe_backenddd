@@ -1,6 +1,6 @@
 // ─── routes/adminRoutes.js ───────────────────────────────────────────────────
 import express from "express";
-import { protect } from "../middleware/authMiddleware.js";
+import { protect, requireAdmin } from "../middleware/authMiddleware.js";
 import {
   getDashboardStats,
   getAllOrders,
@@ -11,6 +11,7 @@ import {
   getAllInvoices,
   updateInvoiceStatus,
 } from "../controllers/adminController.js";
+import { adminUpdateOrderItems } from "../controllers/orderController.js";
 
 const router = express.Router();
 
@@ -24,6 +25,10 @@ router.get("/invoices/all", getAllInvoices);
 router.get("/users", getAllUsers);
 router.patch("/invoices/:id/status", updateInvoiceStatus);
 router.put("/orders/:id/status", updateOrderStatus);
+// Admin item-level order modification — requires an actual Admin account
+// (not just any logged-in user); see requireAdmin and
+// orderController.adminUpdateOrderItems for the status/permission rules.
+router.put("/orders/:id/items", requireAdmin, adminUpdateOrderItems);
 
 router.delete("/users/:id", deleteUser);
 
