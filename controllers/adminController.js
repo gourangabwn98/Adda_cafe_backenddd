@@ -6,6 +6,7 @@ import Invoice from "../models/invoiceModel.js";
 import { io }      from "../server.js";
 import { RestaurantProfile } from "../models/restaurantProfile.js";
 // import { RestaurantProfile } from "../models/restaurantProfile.js";
+import { getISTDayRange } from "../utils/dateRange.js";
 
 export const generateInvoice = async (req, res) => {
   // const profileDoc = await RestaurantProfile.findOne().lean();
@@ -25,8 +26,7 @@ export const getDashboardStats = async (req, res) => {
   // Render logs. Measures only this handler's own DB + serialization work.
   console.time("[perf] getDashboardStats");
   try {
-    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
-    const endOfToday = new Date(new Date().setHours(23, 59, 59, 999));
+    const { start: startOfToday, end: endOfToday } = getISTDayRange();
 
     const [
       totalUsers,
@@ -207,13 +207,12 @@ async function buildOrderFilter({ status, orderType, paymentStatus, search, star
   if (startDate || endDate) {
     // startDate/endDate are "YYYY-MM-DD" local calendar dates (e.g.
     // DashboardPage.jsx todayStr(), OrdersPage.jsx date pickers) for this
-    // India-based restaurant — anchor to IST (UTC+05:30) midnight, not UTC
-    // midnight. Parsing as "...Z" shifted the whole window 5:30 forward, so
-    // "today" queries returned nothing until 5:30 AM IST (orders placed
-    // between local midnight and 5:30 AM fell into the previous UTC day).
+    // India-based restaurant — anchor to IST midnight via getISTDayRange,
+    // not UTC midnight (which shifted the whole window 5:30 forward: "today"
+    // queries returned nothing until 5:30 AM IST).
     filter.createdAt = {};
-    if (startDate) filter.createdAt.$gte = new Date(`${startDate}T00:00:00.000+05:30`);
-    if (endDate) filter.createdAt.$lte = new Date(`${endDate}T23:59:59.999+05:30`);
+    if (startDate) filter.createdAt.$gte = getISTDayRange(startDate).start;
+    if (endDate) filter.createdAt.$lte = getISTDayRange(endDate).end;
   }
   return filter;
 }
@@ -259,8 +258,7 @@ export const getAllOrders = async (req, res) => {
 export const getOrdersSummary = async (req, res) => {
   try {
     const { orderType, search, startDate, endDate } = req.query;
-    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
-    const endOfToday = new Date(new Date().setHours(23, 59, 59, 999));
+    const { start: startOfToday, end: endOfToday } = getISTDayRange();
 
     // Date-range pill: Completed + Paid orders in [startDate, endDate],
     // still respecting the Type/search filters (Status/Payment dropdowns are
@@ -411,11 +409,11 @@ export const getAllInvoices = async (req, res) => {
     const { startDate, endDate, orderIds } = req.query;
     const filter = {};
     if (startDate || endDate) {
-      // Same IST-anchoring fix as adminController.buildOrderFilter — these
-      // are local "YYYY-MM-DD" calendar dates, not UTC ones.
+      // Same IST-anchoring as buildOrderFilter above — these are local
+      // "YYYY-MM-DD" calendar dates, not UTC ones.
       filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(`${startDate}T00:00:00.000+05:30`);
-      if (endDate) filter.createdAt.$lte = new Date(`${endDate}T23:59:59.999+05:30`);
+      if (startDate) filter.createdAt.$gte = getISTDayRange(startDate).start;
+      if (endDate) filter.createdAt.$lte = getISTDayRange(endDate).end;
     }
     if (orderIds) {
       const ids = String(orderIds).split(",").map((s) => s.trim()).filter(Boolean);
