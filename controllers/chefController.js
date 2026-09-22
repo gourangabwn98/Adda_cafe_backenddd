@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import { Chef } from "../models/Chef.js";
 import { User } from "../models/User.js";
 import { Order } from "../models/Order.js";
+import { getISTDayRange, todayIST } from "../utils/dateRange.js";
 
 // const { Chef } = require("../models/Chef.js");
 
@@ -86,16 +87,15 @@ export const updateChefStatus = async (req, res) => {
 // Waiter-wise daily revenue: Cash vs Online, for orders actually collected
 // (paymentStatus "Paid") that a Chef/Waiter placed via the Waiter app
 // (Order.chefId — unset for Admin/Client orders, which are excluded here).
-// Defaults to today (server local time); pass `chefId` to scope to one
+// Defaults to today (IST); pass `chefId` to scope to one
 // staff member (used by the Waiter app for its own "My Daily Revenue").
 export const getChefRevenue = async (req, res) => {
   try {
     const { chefId, date } = req.query;
 
-    const dayStart = date ? new Date(`${date}T00:00:00`) : new Date();
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayEnd.getDate() + 1);
+    const resolvedDate = date || todayIST();
+    const { start: dayStart } = getISTDayRange(resolvedDate);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
 
     const match = {
       paymentStatus: "Paid",
@@ -144,7 +144,7 @@ export const getChefRevenue = async (req, res) => {
       }))
       .sort((a, b) => b.total - a.total);
 
-    res.json({ success: true, date: dayStart.toISOString().slice(0, 10), chefs: chefsRevenue });
+    res.json({ success: true, date: resolvedDate, chefs: chefsRevenue });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
