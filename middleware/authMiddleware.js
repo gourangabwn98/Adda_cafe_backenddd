@@ -30,6 +30,16 @@ export const protect = async (req, res, next) => {
   }
 };
 
+// Must run after `protect` (needs req.user populated). Rejects any
+// authenticated-but-non-admin user with 403 — used where a route must be
+// restricted to actual Admin accounts (User.isAdmin), not just "any logged
+// in user", e.g. admin order modification.
+export const requireAdmin = (req, res, next) => {
+  if (!req.user?.isAdmin)
+    return res.status(403).json({ message: "Admin access required" });
+  next();
+};
+
 export const optionalProtect = async (req, res, next) => {
   const auth = req.headers.authorization;
 
