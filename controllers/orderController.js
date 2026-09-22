@@ -2,7 +2,7 @@ import { MenuItem } from "../models/MenuItem.js";
 import { Order } from "../models/Order.js";
 import { RestaurantProfile } from "../models/restaurantProfile.js";
 import { io } from "../server.js";
-import { isServiceChargeExempt } from "../utils/serviceCharge.js";
+import { isServiceChargeApplicable, getApplicableCategoryNames } from "../utils/serviceCharge.js";
 // import { RestaurantProfile } from "../models/RestaurantProfile.js";
 
 // ─── ORDER CONTROLLER ────────────────────────────────────────────────────────
@@ -181,7 +181,9 @@ const computeOrderPricing = async (items, type) => {
     MenuItem.find({ _id: { $in: menuItemIds } }),
     // Sorted so this always agrees with profileController's singleton pick
     // (see SINGLETON_SORT comment there) if more than one profile doc exists.
-    RestaurantProfile.findOne().sort({ createdAt: 1 }),
+    // populate() resolves serviceChargeCategories to {_id, name} so
+    // isServiceChargeApplicable can match against item.category by name.
+    RestaurantProfile.findOne().sort({ createdAt: 1 }).populate("serviceChargeCategories", "name"),
   ]);
   const menuById = new Map(menuDocs.map((m) => [String(m._id), m]));
 
@@ -201,10 +203,13 @@ const computeOrderPricing = async (items, type) => {
   const tax      = Math.round(subtotal * gstRate);
 
   // ── Service charge: serviceCharge × chargeable quantity ───────────────
-  // Parcel / Water / Gas items are exempt (see utils/serviceCharge.js).
+  // Only categories the Admin selected in Profile → Pricing & delivery
+  // incur this charge (see utils/serviceCharge.js) — everything else is
+  // exempt by default.
   // e.g. 5 chargeable items ordered × ₹4 = ₹20
+  const applicableCategories = getApplicableCategoryNames(restaurant);
   const totalQty         = dbItems
-    .filter((i) => !isServiceChargeExempt(i.category))
+    .filter((i) => isServiceChargeApplicable(i.category, applicableCategories))
     .reduce((s, i) => s + i.qty, 0);
   const serviceChargeAmt = serviceCharge * totalQty;
 

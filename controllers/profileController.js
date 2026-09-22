@@ -31,7 +31,14 @@ const uploadToCloudinary = (buffer, folder = "restaurant", transformOptions) =>
 const SINGLETON_SORT = { createdAt: 1 };
 
 const getOrCreateProfile = async () => {
-  let profile = await RestaurantProfile.findOne().sort(SINGLETON_SORT);
+  let profile = await RestaurantProfile.findOne()
+    .sort(SINGLETON_SORT)
+    // Resolves serviceChargeCategories to {_id, name} — the Admin UI needs
+    // the ids to know which checkboxes are selected, and every other app
+    // (Customer/Waiter/Admin order screens) needs the names to mirror the
+    // same service-charge logic for their live cart preview (see
+    // utils/serviceCharge.js — the backend stays authoritative regardless).
+    .populate("serviceChargeCategories", "name");
   if (!profile)
     profile = await RestaurantProfile.create({ restaurantName: "My Restaurant" });
   return profile;

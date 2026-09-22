@@ -156,8 +156,16 @@ const restaurantProfileSchema = new mongoose.Schema(
     // ── Additional Charges ─────────────────────────────────────────────────
     serviceCharge: {
       type: Number,
-      default: 0, // percentage
+      default: 0, // flat amount per chargeable item
     },
+    // Categories the per-item service charge applies to — an explicit,
+    // Admin-selected allowlist (Admin → Profile → Pricing & delivery).
+    // Categories NOT in this list never incur service charge. Replaces a
+    // previous hardcoded exemption list (Parcel/Water/Gas) that couldn't be
+    // changed without a code deploy.
+    serviceChargeCategories: [
+      { type: mongoose.Schema.Types.ObjectId, ref: "Category" },
+    ],
     packingCharge: {
       type: Number,
       default: 0, // flat amount
