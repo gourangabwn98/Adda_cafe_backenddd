@@ -4,6 +4,7 @@ import {
   deleteChef,
   getAllChefs,
   updateChefStatus,
+  updateChefRole,
   getChefRevenue,
 } from "../controllers/chefController.js";
 import { protect } from "../middleware/authMiddleware.js";
@@ -26,6 +27,7 @@ router.get("/", getAllChefs);
 router.get("/revenue", protect, getChefRevenue);
 router.post("/",protect, createChef);
 router.patch("/:id/status",protect, updateChefStatus);
+router.patch("/:id/role", protect, updateChefRole);
 router.delete("/:id",protect, deleteChef);
 
 export default router;

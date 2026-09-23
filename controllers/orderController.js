@@ -1,6 +1,6 @@
 import { MenuItem } from "../models/MenuItem.js";
 import { Order } from "../models/Order.js";
-import { Chef } from "../models/Chef.js";
+import { Chef, isWaiterRole } from "../models/Chef.js";
 import { RestaurantProfile } from "../models/restaurantProfile.js";
 import { io } from "../server.js";
 import { isServiceChargeApplicable, getApplicableCategoryNames } from "../utils/serviceCharge.js";
@@ -334,13 +334,15 @@ export const placeOrder = async (req, res) => {
 // The accepting waiter becomes the order's assigned waiter (Order.chefId /
 // waiterName), which is what getChefRevenue groups collection by. Resolved
 // server-side from the verified login phone (Waiter login = Chef phone +
-// OTP), never from the request body. An accept by a non-waiter (e.g. Admin)
-// leaves the order unassigned so it's in nobody's collection.
+// OTP), never from the request body. Only staff with role "Waiter" (see
+// Chef.role) are assigned; an accept by anyone else (Admin, or Chef/Manager/
+// Others staff) leaves the order unassigned so it's in nobody's collection.
 export const acceptOrder = async (req, res) => {
   try {
-    const chef = req.user?.phone
-      ? await Chef.findOne({ phone: req.user.phone }).select("name").lean()
+    const staff = req.user?.phone
+      ? await Chef.findOne({ phone: req.user.phone }).select("name role").lean()
       : null;
+    const chef = staff && isWaiterRole(staff.role) ? staff : null;
 
     // Atomic status check + update: two waiters accepting at the same
     // instant can't both succeed and overwrite each other's assignment.
