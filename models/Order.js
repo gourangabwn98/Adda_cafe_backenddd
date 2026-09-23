@@ -35,10 +35,12 @@ const orderSchema = new mongoose.Schema(
       default: false,
     },
 
-    // Which staff member (Chef doc — this app's "waiter" roster, see
-    // Chef.js/chefController.js) placed this order via the Waiter app.
-    // Only set for Waiter-placed orders; null/absent for Admin/Client
-    // orders. `waiterName` is a denormalized snapshot (same pattern as
+    // The waiter (Chef doc — this app's "waiter" roster, see
+    // Chef.js/chefController.js) assigned to this order: the waiter who
+    // placed it via the Waiter app, or, for Client orders, the waiter who
+    // accepted it (orderController.acceptOrder). Absent for Admin orders and
+    // Admin-accepted Client orders. Drives waiter-wise collection
+    // (chefController.getChefRevenue). `waiterName` is a denormalized snapshot (same pattern as
     // orderItemSchema.category) so display doesn't need a populate, and
     // still works if the Chef record is later renamed/deleted.
     chefId: {
