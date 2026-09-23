@@ -2,7 +2,7 @@
 // const User = require("../models/User.js"); // assuming you have admin user
 
 import mongoose from "mongoose";
-import { Chef } from "../models/Chef.js";
+import { Chef, STAFF_ROLES } from "../models/Chef.js";
 import { User } from "../models/User.js";
 import { Order } from "../models/Order.js";
 import { getISTDayRange, todayIST } from "../utils/dateRange.js";
@@ -22,12 +22,19 @@ export const getAllChefs = async (req, res) => {
 // Create new chef
 export const createChef = async (req, res) => {
   try {
-    const { name, phone, status } = req.body;
+    const { name, phone, status, role } = req.body;
 
     if (!name || !phone) {
       return res
         .status(400)
         .json({ success: false, message: "Name and phone are required" });
+    }
+
+    if (role !== undefined && !STAFF_ROLES.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: `Role must be one of: ${STAFF_ROLES.join(", ")}`,
+      });
     }
 
     // Check if phone already exists
@@ -43,6 +50,7 @@ export const createChef = async (req, res) => {
       name: name.trim(),
       phone: phone.trim(),
       status: status || "Active",
+      role: role || "Waiter",
       // createdBy: req.user._id,
       createdBy: req.user?._id || null,
     });
@@ -78,6 +86,34 @@ export const updateChefStatus = async (req, res) => {
       message: `Chef status updated to ${status}`,
       chef,
     });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// PATCH /api/admin/chefs/:id/role — change a staff member's role (Waiter /
+// Chef / Manager / Others). Only affects orders accepted after the change;
+// already-assigned orders keep their waiter.
+export const updateChefRole = async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!STAFF_ROLES.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: `Role must be one of: ${STAFF_ROLES.join(", ")}`,
+      });
+    }
+    const chef = await Chef.findByIdAndUpdate(
+      req.params.id,
+      { role },
+      { new: true, runValidators: true },
+    );
+    if (!chef) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Chef not found" });
+    }
+    res.json({ success: true, message: `Role updated to ${role}`, chef });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
