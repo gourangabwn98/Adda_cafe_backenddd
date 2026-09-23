@@ -85,8 +85,11 @@ export const updateChefStatus = async (req, res) => {
 
 // GET /api/admin/chefs/revenue?chefId=<optional>&date=YYYY-MM-DD
 // Waiter-wise daily revenue: Cash vs Online, for orders actually collected
-// (paymentStatus "Paid") that a Chef/Waiter placed via the Waiter app
-// (Order.chefId — unset for Admin/Client orders, which are excluded here).
+// (paymentStatus "Paid"), grouped by the order's assigned waiter
+// (Order.chefId — set when a waiter places an order, or accepts a Client
+// order; unassigned orders are excluded). Computed from orders rather than
+// stored per-order records, so an order paid/completed more than once is
+// still counted exactly once, at its current total.
 // Defaults to today (IST); pass `chefId` to scope to one
 // staff member (used by the Waiter app for its own "My Daily Revenue").
 export const getChefRevenue = async (req, res) => {

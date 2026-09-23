@@ -1,5 +1,6 @@
 import { MenuItem } from "../models/MenuItem.js";
 import { Order } from "../models/Order.js";
+import { Chef } from "../models/Chef.js";
 import { RestaurantProfile } from "../models/restaurantProfile.js";
 import { io } from "../server.js";
 import { isServiceChargeApplicable, getApplicableCategoryNames } from "../utils/serviceCharge.js";
@@ -329,22 +330,44 @@ export const placeOrder = async (req, res) => {
 // PUT /api/orders/:id/accept — admin or Waiter confirms a pending request.
 // Whoever accepts first wins; a second accept/decline on an already-resolved
 // order is rejected rather than silently reprocessed.
+//
+// The accepting waiter becomes the order's assigned waiter (Order.chefId /
+// waiterName), which is what getChefRevenue groups collection by. Resolved
+// server-side from the verified login phone (Waiter login = Chef phone +
+// OTP), never from the request body. An accept by a non-waiter (e.g. Admin)
+// leaves the order unassigned so it's in nobody's collection.
 export const acceptOrder = async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    if (order.status !== "PendingConfirmation")
-      return res.status(400).json({ message: `Order is already ${order.status}` });
+    const chef = req.user?.phone
+      ? await Chef.findOne({ phone: req.user.phone }).select("name").lean()
+      : null;
 
-    order.status = "Placed";
-    // Re-anchor the 3-minute window to THIS moment, not order-creation time —
-    // it was originally set in placeOrder, which can be an arbitrary amount
-    // of time before staff actually accept. Customers see this deadline as
-    // their "modify/cancel this order" countdown (see updateOrderItems /
-    // cancelOrder below), so it must line up with scheduleAutoPreparing's
-    // timer, started right below on the same instant.
-    order.cancelDeadline = new Date(Date.now() + 3 * 60 * 1000);
-    await order.save();
+    // Atomic status check + update: two waiters accepting at the same
+    // instant can't both succeed and overwrite each other's assignment.
+    const order = await Order.findOneAndUpdate(
+      { _id: req.params.id, status: "PendingConfirmation" },
+      {
+        $set: {
+          status: "Placed",
+          // Re-anchor the 3-minute window to THIS moment, not order-creation
+          // time — it was originally set in placeOrder, which can be an
+          // arbitrary amount of time before staff actually accept. Customers
+          // see this deadline as their "modify/cancel this order" countdown
+          // (see updateOrderItems / cancelOrder below), so it must line up
+          // with scheduleAutoPreparing's timer, started below on the same
+          // instant.
+          cancelDeadline: new Date(Date.now() + 3 * 60 * 1000),
+          ...(chef && { chefId: chef._id, waiterName: chef.name }),
+        },
+        ...(!chef && { $unset: { chefId: 1, waiterName: 1 } }),
+      },
+      { new: true },
+    );
+    if (!order) {
+      const existing = await Order.findById(req.params.id).select("status");
+      if (!existing) return res.status(404).json({ message: "Order not found" });
+      return res.status(400).json({ message: `Order is already ${existing.status}` });
+    }
 
     // KOT printing no longer happens here — it now fires when the order
     // actually reaches "Preparing" (see scheduleAutoPreparing above, and
@@ -364,14 +387,18 @@ export const acceptOrder = async (req, res) => {
 export const declineOrder = async (req, res) => {
   try {
     const { reason } = req.body;
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    if (order.status !== "PendingConfirmation")
-      return res.status(400).json({ message: `Order is already ${order.status}` });
-
-    order.status = "Cancelled";
-    order.declineReason = reason || "Declined by staff";
-    await order.save();
+    // Atomic for the same reason as acceptOrder — a decline racing an accept
+    // must not cancel an order another waiter has just been assigned.
+    const order = await Order.findOneAndUpdate(
+      { _id: req.params.id, status: "PendingConfirmation" },
+      { $set: { status: "Cancelled", declineReason: reason || "Declined by staff" } },
+      { new: true },
+    );
+    if (!order) {
+      const existing = await Order.findById(req.params.id).select("status");
+      if (!existing) return res.status(404).json({ message: "Order not found" });
+      return res.status(400).json({ message: `Order is already ${existing.status}` });
+    }
 
     io.emit("order-status-updated", order);
 
