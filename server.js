@@ -20,7 +20,7 @@ import catagoryRoutes from "./routes/catagoryRoutes.js";
 
 // dotenv.config();
 connectDB();
-
+//test
 const app = express();
 const server = http.createServer(app);
 
