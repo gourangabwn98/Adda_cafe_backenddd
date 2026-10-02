@@ -18,6 +18,22 @@ const generateQR = async (tableNo) => {
   return { url, dataUri };
 };
 
+// GET /api/admin/tables/takeaway-qr — QR that opens the menu with Take Away pre-selected
+export const getTakeAwayQR = async (req, res) => {
+  try {
+    const url = `${process.env.CLIENT_URL}/?type=takeaway`;
+    const dataUri = await QRCode.toDataURL(url, {
+      width: 300,
+      margin: 2,
+      color: { dark: "#1a1a2e", light: "#ffffff" },
+      errorCorrectionLevel: "H",
+    });
+    res.json({ qrCode: dataUri, qrUrl: url });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // GET /api/tables
 export const getTables = async (req, res) => {
   try {
